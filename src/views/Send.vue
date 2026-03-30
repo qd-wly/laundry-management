@@ -156,9 +156,9 @@ async function submitBatch() {
   syncing.value = false
 
   if (result.success) {
-    showSuccessToast('提交并同步成功')
+    showSuccessToast('已提交并同步到 GitHub')
   } else {
-    showSuccessToast('已保存本地')
+    showFailToast(`已保存本地，${result.error || 'GitHub 同步失败'}`)
   }
 
   // 重置

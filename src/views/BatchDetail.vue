@@ -3,7 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { db } from '../db/index.js'
 import { pushToGitHub } from '../utils/github.js'
-import { showSuccessToast, showConfirmDialog } from 'vant'
+import { showSuccessToast, showConfirmDialog, showFailToast } from 'vant'
 
 const route = useRoute()
 const router = useRouter()
@@ -54,8 +54,12 @@ async function onDateConfirm({ selectedValues }) {
   await db.batches.put(batch.value)
   showDatePicker.value = false
 
-  await pushToGitHub()
-  showSuccessToast('已更新')
+  const result = await pushToGitHub()
+  if (result.success) {
+    showSuccessToast('已更新并同步到 GitHub')
+  } else {
+    showFailToast(`已更新本地，${result.error || 'GitHub 同步失败'}`)
+  }
 }
 
 async function deleteBatch() {
@@ -63,8 +67,12 @@ async function deleteBatch() {
     await showConfirmDialog({ title: '确认删除', message: '删除后无法恢复' })
     await db.records.where('batchId').equals(batch.value.id).delete()
     await db.batches.delete(batch.value.id)
-    await pushToGitHub()
-    showSuccessToast('已删除')
+    const result = await pushToGitHub()
+    if (result.success) {
+      showSuccessToast('已删除并同步到 GitHub')
+    } else {
+      showFailToast(`已删除本地，${result.error || 'GitHub 同步失败'}`)
+    }
     router.back()
   } catch {
     // cancelled

@@ -29,6 +29,17 @@ onMounted(async () => {
   staffList.value = await db.staff.toArray()
 })
 
+async function syncAfterMutation(successMessage, fallbackMessage) {
+  const result = await pushToGitHub()
+  if (result.success) {
+    showSuccessToast(successMessage)
+    return true
+  }
+
+  showFailToast(`${fallbackMessage}，${result.error || 'GitHub 同步失败'}`)
+  return false
+}
+
 async function saveGitHub() {
   await db.settings.put({ key: 'github_repo', value: githubRepo.value })
   await db.settings.put({ key: 'github_token', value: githubToken.value })
@@ -77,9 +88,12 @@ async function doImportHistory() {
 
     importingHistory.value = true
     const result = await importHistorySeed({ year: 2026, month: 3 })
-    importingHistory.value = false
     staffList.value = await db.staff.toArray()
-    showSuccessToast(`已导入 2026年3月 ${result.importedBatchCount} 个批次`)
+    await syncAfterMutation(
+      `已导入 2026年3月 ${result.importedBatchCount} 个批次，并同步到 GitHub`,
+      `已导入 2026年3月 ${result.importedBatchCount} 个批次到本地`
+    )
+    importingHistory.value = false
   } catch (error) {
     importingHistory.value = false
     if (error?.message) {
@@ -105,7 +119,7 @@ async function addStaff() {
   })
   staffList.value = await db.staff.toArray()
   newStaffName.value = ''
-  showSuccessToast('已添加')
+  await syncAfterMutation('已添加人员并同步到 GitHub', '已添加人员到本地')
 }
 
 async function removeStaff(id) {
@@ -113,7 +127,7 @@ async function removeStaff(id) {
     await showConfirmDialog({ title: '确认删除' })
     await db.staff.delete(id)
     staffList.value = await db.staff.toArray()
-    showSuccessToast('已删除')
+    await syncAfterMutation('已删除人员并同步到 GitHub', '已删除人员到本地')
   } catch {
     // cancelled
   }
