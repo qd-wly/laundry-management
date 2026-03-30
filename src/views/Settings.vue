@@ -4,10 +4,13 @@ import { db } from '../db/index.js'
 import { pushToGitHub, importFromGitHub } from '../utils/github.js'
 import { exportToExcel } from '../utils/export.js'
 import { showSuccessToast, showFailToast, showConfirmDialog, showToast } from 'vant'
+import { getHistorySeedSummary, importHistorySeed } from '../utils/historyImport.js'
 
 const githubRepo = ref('')
 const githubToken = ref('')
 const syncing = ref(false)
+const importingHistory = ref(false)
+const marchHistorySummary = getHistorySeedSummary({ year: 2026, month: 3 })
 
 // 人员管理
 const showStaffPopup = ref(false)
@@ -63,6 +66,26 @@ async function syncFromCloud() {
 async function doExportAll() {
   await exportToExcel()
   showSuccessToast('导出成功')
+}
+
+async function doImportHistory() {
+  try {
+    await showConfirmDialog({
+      title: '导入 2026年3月',
+      message: `将导入 2026 年 3 月的 ${marchHistorySummary.batchCount} 个历史批次，重复导入会按同一历史批次覆盖更新，继续吗？`,
+    })
+
+    importingHistory.value = true
+    const result = await importHistorySeed({ year: 2026, month: 3 })
+    importingHistory.value = false
+    staffList.value = await db.staff.toArray()
+    showSuccessToast(`已导入 2026年3月 ${result.importedBatchCount} 个批次`)
+  } catch (error) {
+    importingHistory.value = false
+    if (error?.message) {
+      showFailToast(error.message)
+    }
+  }
 }
 
 // 人员管理
@@ -123,6 +146,16 @@ function getStaffByDept(deptId) {
       <van-cell title="推送到云端" is-link :loading="syncing" @click="syncToCloud" />
       <van-cell title="从云端拉取" is-link @click="syncFromCloud" />
       <van-cell title="导出全部 Excel" is-link @click="doExportAll" />
+    </van-cell-group>
+
+    <van-cell-group inset title="历史导入" style="margin-top: 12px">
+      <van-cell
+        :title="`导入 2026年3月历史记录（${marchHistorySummary.batchCount}批）`"
+        :label="`来源：原始Markdown记录，约${marchHistorySummary.itemRecordCount}条物品明细`"
+        is-link
+        :loading="importingHistory"
+        @click="doImportHistory"
+      />
     </van-cell-group>
 
     <!-- 人员管理 -->

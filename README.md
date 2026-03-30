@@ -1,5 +1,26 @@
-# Vue 3 + Vite
+# 布草送洗管理
 
-This template should help get you started developing with Vue 3 in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+手机端布草送洗登记工具，支持：
 
-Learn more about IDE Support for Vue in the [Vue Docs Scaling up Guide](https://vuejs.org/guide/scaling-up/tooling.html#ide-support).
+- 送洗登记、批次管理、月度统计
+- IndexedDB 本地存储
+- Excel 导出
+- GitHub 手动同步
+- 内置历史月度记录导入
+
+## 目录
+
+- 代码目录：`C:\Local\LocalCode\布草送洗管理`
+- 文档目录：`C:\Local\上班库\02_Work\AI\布草送洗管理`
+- 原始记录目录：`C:\Local\上班库\02_Work\所有\运营管理\物业管理\布草\送洗记录`
+
+## 常用命令
+
+```bash
+npm install
+npm run seed:history
+npm run dev
+npm run build
+```
+
+`npm run seed:history` 会读取原始 Markdown 送洗记录，并生成前端可导入的历史种子数据。
