@@ -45,7 +45,7 @@ body::before {
   position: relative;
   max-width: var(--app-max-width);
   margin: 0 auto;
-  padding: 22px 18px calc(92px + env(safe-area-inset-bottom));
+  padding: 22px 18px calc(112px + env(safe-area-inset-bottom));
 }
 
 .app-shell {
@@ -115,10 +115,11 @@ body::before {
   display: grid;
   gap: 12px;
   margin-top: 18px;
+  padding-bottom: 12px;
 }
 
 .popup-sheet {
-  padding: 22px 18px calc(20px + env(safe-area-inset-bottom));
+  padding: 22px 18px calc(42px + env(safe-area-inset-bottom));
 }
 
 .popup-sheet--tall {
@@ -209,10 +210,11 @@ body::before {
   background: rgba(255, 255, 255, 0.92) !important;
   backdrop-filter: blur(18px);
   box-shadow: 0 -8px 24px rgba(17, 40, 74, 0.08);
+  padding-bottom: max(8px, env(safe-area-inset-bottom));
 }
 
 .van-tabbar-item {
-  min-height: 68px;
+  min-height: 72px;
 }
 
 .van-tabbar-item__icon {
@@ -225,7 +227,7 @@ body::before {
 
 @media (min-width: 900px) {
   #app {
-    padding: 30px 24px calc(96px + env(safe-area-inset-bottom));
+    padding: 30px 24px calc(124px + env(safe-area-inset-bottom));
   }
 
   .van-popup--bottom {
@@ -233,5 +235,11 @@ body::before {
     width: min(960px, calc(100vw - 40px));
     transform: translateX(-50%);
     border-radius: 30px 30px 0 0 !important;
+    bottom: 16px !important;
+    max-height: calc(100vh - 32px);
+  }
+
+  .popup-sheet {
+    padding-bottom: calc(56px + env(safe-area-inset-bottom));
   }
 }

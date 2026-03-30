@@ -1,5 +1,5 @@
 const path = require('node:path')
-const { app, BrowserWindow, ipcMain, shell } = require('electron')
+const { app, BrowserWindow, ipcMain, screen, shell } = require('electron')
 const storage = require('./storage.cjs')
 
 let mainWindow = null
@@ -9,14 +9,20 @@ function getIndexPath() {
 }
 
 function createWindow() {
+  const { workAreaSize } = screen.getPrimaryDisplay()
+  const width = Math.min(1440, Math.max(1200, workAreaSize.width - 48))
+  const height = Math.min(960, Math.max(760, workAreaSize.height - 56))
+
   mainWindow = new BrowserWindow({
-    width: 1440,
-    height: 960,
+    width,
+    height,
     minWidth: 1100,
     minHeight: 760,
     autoHideMenuBar: true,
     show: false,
+    center: true,
     title: '布草送洗管理',
+    backgroundColor: '#edf1f6',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
