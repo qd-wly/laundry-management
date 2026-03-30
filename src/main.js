@@ -15,7 +15,7 @@ const routes = [
 ]
 
 const router = createRouter({
-  history: createWebHistory('/laundry-management/'),
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes,
 })
 

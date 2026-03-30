@@ -2,7 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { v4 as uuidv4 } from 'uuid'
 import { db } from '../db/index.js'
-import { pushToGitHub } from '../utils/github.js'
+import { pushToServer } from '../utils/serverSync.js'
 import { showToast, showSuccessToast, showFailToast } from 'vant'
 
 const sendDate = ref(new Date().toISOString().slice(0, 10))
@@ -150,15 +150,15 @@ async function submitBatch() {
   await db.batches.add(batch)
   await db.records.bulkAdd(records)
 
-  // 同步到 GitHub
+  // 自动同步到服务器
   syncing.value = true
-  const result = await pushToGitHub()
+  const result = await pushToServer()
   syncing.value = false
 
   if (result.success) {
-    showSuccessToast('已提交并同步到 GitHub')
+    showSuccessToast('已提交并同步到服务器')
   } else {
-    showFailToast(`已保存本地，${result.error || 'GitHub 同步失败'}`)
+    showFailToast(`已保存本地，${result.error || '服务器同步失败'}`)
   }
 
   // 重置

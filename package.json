@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "seed:history": "node scripts/build-history-seed.mjs",
+    "server": "node server/index.mjs",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview"

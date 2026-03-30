@@ -1,7 +1,7 @@
 {
   "name": "布草送洗管理",
   "short_name": "布草送洗",
-  "start_url": "/laundry-management/",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#1989fa",

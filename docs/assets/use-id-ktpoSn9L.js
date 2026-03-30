@@ -1,1 +1,0 @@
-import{Ft as e}from"./db-CExq6_tb.js";var t=0;function n(){let{name:n=`unknown`}=e()?.type||{};return`${n}-${++t}`}export{n as t};

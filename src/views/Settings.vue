@@ -1,16 +1,21 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { db } from '../db/index.js'
-import { pushToGitHub, importFromGitHub } from '../utils/github.js'
+import {
+  pushToServer,
+  importFromServer,
+  saveServerConfig,
+  readServerSettings,
+  checkServerHealth,
+} from '../utils/serverSync.js'
 import { exportToExcel } from '../utils/export.js'
 import { showSuccessToast, showFailToast, showConfirmDialog, showToast } from 'vant'
 import { getHistorySeedSummary, importHistorySeed } from '../utils/historyImport.js'
 
-const DEFAULT_GITHUB_REPO = 'qd-wly/laundry-management'
-
-const githubRepo = ref(DEFAULT_GITHUB_REPO)
-const githubToken = ref('')
+const serverBaseUrl = ref('')
+const serverApiKey = ref('')
 const syncing = ref(false)
+const testingServer = ref(false)
 const importingHistory = ref(false)
 const marchHistorySummary = getHistorySeedSummary({ year: 2026, month: 3 })
 
@@ -22,42 +27,51 @@ const newStaffName = ref('')
 const newStaffDeptId = ref(null)
 
 onMounted(async () => {
-  const repo = await db.settings.get('github_repo')
-  const token = await db.settings.get('github_token')
-  if (repo?.value) {
-    githubRepo.value = repo.value
-  } else {
-    await db.settings.put({ key: 'github_repo', value: DEFAULT_GITHUB_REPO })
-  }
-  if (token) githubToken.value = token.value
+  const serverConfig = await readServerSettings()
+  serverBaseUrl.value = serverConfig.baseUrl
+  serverApiKey.value = serverConfig.apiKey
 
   departments.value = await db.departments.orderBy('sortOrder').toArray()
   staffList.value = await db.staff.toArray()
 })
 
 async function syncAfterMutation(successMessage, fallbackMessage) {
-  const result = await pushToGitHub()
+  const result = await pushToServer()
   if (result.success) {
     showSuccessToast(successMessage)
     return true
   }
 
-  showFailToast(`${fallbackMessage}，${result.error || 'GitHub 同步失败'}`)
+  showFailToast(`${fallbackMessage}，${result.error || '服务器同步失败'}`)
   return false
 }
 
-async function saveGitHub() {
-  await db.settings.put({ key: 'github_repo', value: githubRepo.value })
-  await db.settings.put({ key: 'github_token', value: githubToken.value })
-  showSuccessToast('已保存')
+async function saveServerSettingsAction() {
+  await saveServerConfig({
+    baseUrl: serverBaseUrl.value,
+    apiKey: serverApiKey.value,
+  })
+  showSuccessToast('服务器配置已保存')
+}
+
+async function testServer() {
+  testingServer.value = true
+  const result = await checkServerHealth(serverBaseUrl.value)
+  testingServer.value = false
+
+  if (result.success) {
+    showSuccessToast('服务器连接正常')
+  } else {
+    showFailToast(result.error || '服务器连接失败')
+  }
 }
 
 async function syncToCloud() {
   syncing.value = true
-  const result = await pushToGitHub()
+  const result = await pushToServer()
   syncing.value = false
   if (result.success) {
-    showSuccessToast('同步成功')
+    showSuccessToast('已推送到服务器')
   } else {
     showFailToast(result.error || '同步失败')
   }
@@ -65,9 +79,9 @@ async function syncToCloud() {
 
 async function syncFromCloud() {
   try {
-    await showConfirmDialog({ title: '确认', message: '将用云端数据覆盖本地，确定吗？' })
+    await showConfirmDialog({ title: '确认', message: '将用服务器数据覆盖本地，确定吗？' })
     syncing.value = true
-    const result = await importFromGitHub()
+    const result = await importFromServer()
     syncing.value = false
     if (result.success) {
       showSuccessToast(result.message || '导入成功')
@@ -96,7 +110,7 @@ async function doImportHistory() {
     const result = await importHistorySeed({ year: 2026, month: 3 })
     staffList.value = await db.staff.toArray()
     await syncAfterMutation(
-      `已导入 2026年3月 ${result.importedBatchCount} 个批次，并同步到 GitHub`,
+      `已导入 2026年3月 ${result.importedBatchCount} 个批次，并同步到服务器`,
       `已导入 2026年3月 ${result.importedBatchCount} 个批次到本地`
     )
     importingHistory.value = false
@@ -125,7 +139,7 @@ async function addStaff() {
   })
   staffList.value = await db.staff.toArray()
   newStaffName.value = ''
-  await syncAfterMutation('已添加人员并同步到 GitHub', '已添加人员到本地')
+  await syncAfterMutation('已添加人员并同步到服务器', '已添加人员到本地')
 }
 
 async function removeStaff(id) {
@@ -133,7 +147,7 @@ async function removeStaff(id) {
     await showConfirmDialog({ title: '确认删除' })
     await db.staff.delete(id)
     staffList.value = await db.staff.toArray()
-    await syncAfterMutation('已删除人员并同步到 GitHub', '已删除人员到本地')
+    await syncAfterMutation('已删除人员并同步到服务器', '已删除人员到本地')
   } catch {
     // cancelled
   }
@@ -152,19 +166,22 @@ function getStaffByDept(deptId) {
   <div class="page">
     <div class="page-title">设置</div>
 
-    <!-- GitHub 配置 -->
-    <van-cell-group inset title="GitHub 同步">
-      <van-field v-model="githubRepo" label="仓库" placeholder="如 qd-wly/laundry-management" />
-      <van-field v-model="githubToken" label="Token" type="password" placeholder="Personal Access Token" />
+    <!-- 服务器配置 -->
+    <van-cell-group inset title="阿里云服务器同步">
+      <van-field v-model="serverBaseUrl" label="服务器地址" placeholder="如 https://your-domain.com" />
+      <van-field v-model="serverApiKey" label="访问密钥" type="password" placeholder="请输入服务器密钥" />
       <van-cell>
-        <van-button size="small" type="primary" @click="saveGitHub">保存配置</van-button>
+        <van-space>
+          <van-button size="small" type="primary" @click="saveServerSettingsAction">保存配置</van-button>
+          <van-button size="small" plain type="primary" :loading="testingServer" @click="testServer">测试连接</van-button>
+        </van-space>
       </van-cell>
     </van-cell-group>
 
     <!-- 数据操作 -->
     <van-cell-group inset title="数据管理" style="margin-top: 12px">
-      <van-cell title="推送到云端" is-link :loading="syncing" @click="syncToCloud" />
-      <van-cell title="从云端拉取" is-link @click="syncFromCloud" />
+      <van-cell title="推送到服务器" is-link :loading="syncing" @click="syncToCloud" />
+      <van-cell title="从服务器拉取" is-link @click="syncFromCloud" />
       <van-cell title="导出全部 Excel" is-link @click="doExportAll" />
     </van-cell-group>
 
