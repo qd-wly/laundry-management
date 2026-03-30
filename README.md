@@ -36,9 +36,10 @@ npm run start:local-site
 
 ## 本地使用
 
-最简单的方式：
+推荐方式：
 
-- 双击项目根目录下的 `打开布草送洗管理.bat`
+- 在项目目录执行 `npm run start:local-site`
+- 或直接运行 `scripts/start-local-site.ps1`
 
 它会自动：
 
