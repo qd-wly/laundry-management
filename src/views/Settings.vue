@@ -6,7 +6,9 @@ import { exportToExcel } from '../utils/export.js'
 import { showSuccessToast, showFailToast, showConfirmDialog, showToast } from 'vant'
 import { getHistorySeedSummary, importHistorySeed } from '../utils/historyImport.js'
 
-const githubRepo = ref('')
+const DEFAULT_GITHUB_REPO = 'qd-wly/laundry-management'
+
+const githubRepo = ref(DEFAULT_GITHUB_REPO)
 const githubToken = ref('')
 const syncing = ref(false)
 const importingHistory = ref(false)
@@ -22,7 +24,11 @@ const newStaffDeptId = ref(null)
 onMounted(async () => {
   const repo = await db.settings.get('github_repo')
   const token = await db.settings.get('github_token')
-  if (repo) githubRepo.value = repo.value
+  if (repo?.value) {
+    githubRepo.value = repo.value
+  } else {
+    await db.settings.put({ key: 'github_repo', value: DEFAULT_GITHUB_REPO })
+  }
   if (token) githubToken.value = token.value
 
   departments.value = await db.departments.orderBy('sortOrder').toArray()
