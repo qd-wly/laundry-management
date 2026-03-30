@@ -1,10 +1,10 @@
 import { createApp } from 'vue'
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHashHistory } from 'vue-router'
 import 'vant/lib/index.css'
 import './style.css'
 import App from './App.vue'
 import { initDB } from './db/index.js'
-import { hydrateFromLocalSite } from './utils/serverSync.js'
+import { hydrateFromDesktopStorage } from './utils/desktopStorage.js'
 
 const routes = [
   { path: '/', redirect: '/send' },
@@ -16,7 +16,7 @@ const routes = [
 ]
 
 const router = createRouter({
-  history: createWebHistory(import.meta.env.BASE_URL),
+  history: createWebHashHistory(),
   routes,
 })
 
@@ -26,9 +26,9 @@ router.afterEach(to => {
 
 async function bootstrap() {
   await initDB()
-  const result = await hydrateFromLocalSite()
+  const result = await hydrateFromDesktopStorage()
   if (!result.success) {
-    console.warn('[Laundry] local site bootstrap skipped:', result.error)
+    console.warn('[Laundry] desktop storage bootstrap skipped:', result.error)
   }
 
   const app = createApp(App)

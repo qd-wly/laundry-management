@@ -1,15 +1,14 @@
 # 布草送洗管理
 
-适用于 Surface Pro 8 这类可触控设备的本地管理网站，面向单人使用场景。
+面向 Surface Pro 8 这类可触控 Windows 设备的桌面管理程序。
 
 当前方案：
 
-- 前端：Vue 3 + Vant
-- 运行方式：本地网站
-- 本地数据库：`server/data/laundry-data.json`
-- 本地缓存：浏览器 IndexedDB，仅作为页面运行缓存
-- 数据备份：JSON 导入导出 + Excel 导出
-- 代码同步：继续使用 Git / GitHub
+- 桌面壳：Electron
+- 界面：Vue 3 + Vant
+- 数据文件：本地 JSON
+- 备份：自动备份 + JSON 导入导出 + Excel 导出
+- 代码管理：Git / GitHub
 
 ## 项目目录
 
@@ -23,35 +22,31 @@
 npm install
 npm run seed:history
 npm run build
-npm run local
-npm run start:local-site
+npm run desktop
+npm run dist:win
 ```
 
 说明：
 
 - `npm run seed:history`：从原始 Markdown 记录生成历史导入种子
-- `npm run build`：构建本地网站静态文件到 `docs/`
-- `npm run local`：启动本地网站和本地数据接口
-- `npm run start:local-site`：一键构建并打开本地网站
+- `npm run build`：构建前端页面到 `docs/`
+- `npm run desktop`：本地启动桌面程序
+- `npm run dist:win`：构建 Windows 便携版可执行文件
 
-## 本地使用
+## 桌面版使用
 
-推荐方式：
+当前已可生成 Windows 便携版，产物目录：
 
-- 在项目目录执行 `npm run start:local-site`
-- 或直接运行 `scripts/start-local-site.ps1`
+- `release\布草送洗管理 0.0.0.exe`
+- `release\win-unpacked\`
 
-它会自动：
-
-- 构建最新页面
-- 启动本地网站
-- 打开浏览器访问 `http://127.0.0.1:8788`
+直接打开便携版 `.exe` 即可使用。
 
 ## 数据说明
 
-- 实际业务数据默认写入：`server/data/laundry-data.json`
-- 每次覆盖写入前，会在 `server/data/backups/` 下生成一份时间戳备份
-- `server/data/laundry-data.json` 已加入 `.gitignore`，不会跟着代码一起推到 GitHub
+- 开发环境默认写入：`server/data/laundry-data.json`
+- 打包后的便携版优先写入：`exe` 同目录下的 `data\laundry-data.json`
+- 每次覆盖写入前，会在 `backups\` 目录生成一份时间戳备份
 
 ## 当前功能
 

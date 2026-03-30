@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { v4 as uuidv4 } from 'uuid'
 import { showFailToast, showSuccessToast, showToast } from 'vant'
 import { db } from '../db/index.js'
-import { saveToLocalSite } from '../utils/serverSync.js'
+import { saveToDesktopStorage } from '../utils/desktopStorage.js'
 
 const sendDate = ref(new Date().toISOString().slice(0, 10))
 const showDatePicker = ref(false)
@@ -166,13 +166,13 @@ async function submitBatch() {
   await db.records.bulkAdd(records)
 
   saving.value = true
-  const result = await saveToLocalSite()
+  const result = await saveToDesktopStorage()
   saving.value = false
 
   if (result.success) {
     showSuccessToast('已写入本地数据库文件')
   } else {
-    showFailToast(`已保存到浏览器缓存，${result.error || '未写入项目目录数据文件'}`)
+    showFailToast(`已保存在当前页面缓存，${result.error || '未写入桌面数据文件'}`)
   }
 
   currentRecords.value = []

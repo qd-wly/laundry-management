@@ -2,14 +2,17 @@
   "name": "laundry-management",
   "private": true,
   "version": "0.0.0",
+  "description": "Surface Pro 用布草送洗桌面管理工具",
+  "author": "qd-wly",
   "type": "module",
+  "main": "electron/main.cjs",
   "scripts": {
     "seed:history": "node scripts/build-history-seed.mjs",
-    "start:local-site": "powershell -ExecutionPolicy Bypass -NoProfile -File ./scripts/start-local-site.ps1",
-    "local": "node server/index.mjs",
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "desktop": "npm run build && electron .",
+    "dist:win": "npm run build && electron-builder --win portable"
   },
   "dependencies": {
     "@vant/use": "^1.6.0",
@@ -23,8 +26,33 @@
   "devDependencies": {
     "@vant/auto-import-resolver": "^1.3.0",
     "@vitejs/plugin-vue": "^6.0.5",
+    "electron": "^41.1.0",
+    "electron-builder": "^26.8.1",
     "unplugin-auto-import": "^21.0.0",
     "unplugin-vue-components": "^32.0.0",
     "vite": "^8.0.1"
+  },
+  "build": {
+    "appId": "com.qdwly.laundry-management",
+    "productName": "布草送洗管理",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "docs/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "signAndEditExecutable": false,
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    }
   }
 }

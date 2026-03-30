@@ -5,7 +5,7 @@ import { db } from '../db/index.js'
 import { exportToExcel } from '../utils/export.js'
 import { getHistorySeedSummary, importHistorySeed } from '../utils/historyImport.js'
 import { exportBackupJson, importBackupJson } from '../utils/localData.js'
-import { getLocalSiteStatus, saveToLocalSite } from '../utils/serverSync.js'
+import { getStorageStatus, saveToDesktopStorage } from '../utils/desktopStorage.js'
 
 const syncing = ref(false)
 const importingHistory = ref(false)
@@ -34,7 +34,7 @@ async function loadBaseData() {
 }
 
 async function refreshLocalStatus() {
-  const result = await getLocalSiteStatus()
+  const result = await getStorageStatus()
   if (result.success) {
     localStatus.value = {
       ok: true,
@@ -49,13 +49,13 @@ async function refreshLocalStatus() {
     ok: false,
     savedAt: '',
     dataFile: '',
-    error: result.error || '本地站点未连接',
+    error: result.error || '桌面存储未连接',
   }
 }
 
 async function persistLocalDatabase(successMessage, fallbackPrefix) {
   syncing.value = true
-  const result = await saveToLocalSite()
+  const result = await saveToDesktopStorage()
   syncing.value = false
   await refreshLocalStatus()
 
@@ -69,7 +69,7 @@ async function persistLocalDatabase(successMessage, fallbackPrefix) {
 }
 
 async function writeSnapshotNow() {
-  await persistLocalDatabase('已写入本地数据库文件', '已保存在浏览器缓存')
+  await persistLocalDatabase('已写入桌面数据文件', '已保存在当前页面缓存')
 }
 
 async function doExportAll() {
@@ -95,7 +95,7 @@ async function onBackupFileChange(event) {
     await loadBaseData()
     await persistLocalDatabase(
       `已导入备份，共 ${result.batchCount} 个批次`,
-      `已导入备份，共 ${result.batchCount} 个批次到浏览器缓存`
+      `已导入备份，共 ${result.batchCount} 个批次到当前页面缓存`
     )
   } catch (error) {
     showFailToast(error.message || '导入本地备份失败')
@@ -117,7 +117,7 @@ async function doImportHistory() {
     await loadBaseData()
     await persistLocalDatabase(
       `已导入 2026 年 3 月 ${result.importedBatchCount} 个批次`,
-      `已导入 2026 年 3 月 ${result.importedBatchCount} 个批次到浏览器缓存`
+      `已导入 2026 年 3 月 ${result.importedBatchCount} 个批次到当前页面缓存`
     )
   } catch (error) {
     importingHistory.value = false
@@ -145,7 +145,7 @@ async function addStaff() {
 
   newStaffName.value = ''
   await loadBaseData()
-  await persistLocalDatabase('人员已写入本地数据库文件', '人员已保存到浏览器缓存')
+  await persistLocalDatabase('人员已写入桌面数据文件', '人员已保存到当前页面缓存')
 }
 
 async function removeStaff(id) {
@@ -153,7 +153,7 @@ async function removeStaff(id) {
     await showConfirmDialog({ title: '确认删除', message: '删除后将立即写入本地数据库文件。' })
     await db.staff.delete(id)
     await loadBaseData()
-    await persistLocalDatabase('人员已从本地数据库文件删除', '人员已从浏览器缓存删除')
+    await persistLocalDatabase('人员已从桌面数据文件删除', '人员已从当前页面缓存删除')
   } catch {
     // cancelled
   }
@@ -172,7 +172,7 @@ function getStaffByDept(deptId) {
       <div class="hero-grid">
         <div class="hero-metric">
           <span class="hero-label">运行模式</span>
-          <strong>{{ localStatus.ok ? '本地站点数据库' : '浏览器缓存' }}</strong>
+          <strong>{{ localStatus.ok ? '桌面程序数据文件' : '当前页面缓存' }}</strong>
         </div>
         <div class="hero-metric">
           <span class="hero-label">最近写入</span>
@@ -186,10 +186,10 @@ function getStaffByDept(deptId) {
     </section>
 
     <div class="section-stack">
-      <van-cell-group inset title="本地站点">
-        <van-cell title="数据库文件" :label="localStatus.dataFile || '未连接本地站点，请双击根目录下的启动脚本'" />
-        <van-cell title="状态说明" :label="localStatus.ok ? '当前修改会写入项目目录下的 JSON 数据文件。' : localStatus.error" />
-        <van-cell title="立即写入本地数据库文件" is-link :loading="syncing" @click="writeSnapshotNow" />
+      <van-cell-group inset title="桌面存储">
+        <van-cell title="数据库文件" :label="localStatus.dataFile || '当前不是桌面程序环境，尚未连接桌面数据文件'" />
+        <van-cell title="状态说明" :label="localStatus.ok ? '当前修改会写入桌面程序使用的 JSON 数据文件。' : localStatus.error" />
+        <van-cell title="立即写入桌面数据文件" is-link :loading="syncing" @click="writeSnapshotNow" />
       </van-cell-group>
 
       <van-cell-group inset title="数据管理">

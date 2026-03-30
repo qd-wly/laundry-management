@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showConfirmDialog, showFailToast, showSuccessToast } from 'vant'
 import { db } from '../db/index.js'
-import { saveToLocalSite } from '../utils/serverSync.js'
+import { saveToDesktopStorage } from '../utils/desktopStorage.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -75,11 +75,11 @@ async function onDateConfirm({ selectedValues }) {
   await db.batches.put(batch.value)
   showDatePicker.value = false
 
-  const result = await saveToLocalSite()
+  const result = await saveToDesktopStorage()
   if (result.success) {
     showSuccessToast('已更新本地数据库文件')
   } else {
-    showFailToast(`已保存到浏览器缓存，${result.error || '未写入项目目录数据文件'}`)
+    showFailToast(`已保存在当前页面缓存，${result.error || '未写入桌面数据文件'}`)
   }
 }
 
@@ -93,11 +93,11 @@ async function deleteBatch() {
     await db.records.where('batchId').equals(batch.value.id).delete()
     await db.batches.delete(batch.value.id)
 
-    const result = await saveToLocalSite()
+    const result = await saveToDesktopStorage()
     if (result.success) {
       showSuccessToast('已删除并写入本地数据库文件')
     } else {
-      showFailToast(`已从浏览器缓存删除，${result.error || '未写入项目目录数据文件'}`)
+      showFailToast(`已从当前页面缓存删除，${result.error || '未写入桌面数据文件'}`)
     }
 
     router.back()
