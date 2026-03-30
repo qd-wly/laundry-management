@@ -1,14 +1,17 @@
 # 布草送洗管理
 
-手机端布草送洗登记工具，支持：
+适用于 Surface Pro 8 这类可触控设备的本地管理网站，面向单人使用场景。
 
-- 送洗登记、批次管理、月度统计
-- IndexedDB 本地存储
-- Excel 导出
-- 阿里云服务器同步
-- 内置历史月度记录导入
+当前方案：
 
-## 目录
+- 前端：Vue 3 + Vant
+- 运行方式：本地网站
+- 本地数据库：`server/data/laundry-data.json`
+- 本地缓存：浏览器 IndexedDB，仅作为页面运行缓存
+- 数据备份：JSON 导入导出 + Excel 导出
+- 代码同步：继续使用 Git / GitHub
+
+## 项目目录
 
 - 代码目录：`C:\Local\LocalCode\布草送洗管理`
 - 文档目录：`C:\Local\上班库\02_Work\AI\布草送洗管理`
@@ -19,23 +22,43 @@
 ```bash
 npm install
 npm run seed:history
-npm run dev
 npm run build
-npm run server
+npm run local
+npm run start:local-site
 ```
 
-`npm run seed:history` 会读取原始 Markdown 送洗记录，并生成前端可导入的历史种子数据。
+说明：
 
-## 阿里云部署
+- `npm run seed:history`：从原始 Markdown 记录生成历史导入种子
+- `npm run build`：构建本地网站静态文件到 `docs/`
+- `npm run local`：启动本地网站和本地数据接口
+- `npm run start:local-site`：一键构建并打开本地网站
 
-- 前端构建产物：`docs/`
-- 服务端入口：`server/index.mjs`
-- 服务端配置样例：`server/config.example.json`
+## 本地使用
 
-服务端会提供：
+最简单的方式：
 
-- `GET /api/health` 健康检查
-- `GET /api/sync` 拉取完整业务数据
-- `PUT /api/sync` 覆盖保存完整业务数据
+- 双击项目根目录下的 `打开布草送洗管理.bat`
 
-默认数据文件保存在服务端 `server/data/laundry-data.json`。
+它会自动：
+
+- 构建最新页面
+- 启动本地网站
+- 打开浏览器访问 `http://127.0.0.1:8788`
+
+## 数据说明
+
+- 实际业务数据默认写入：`server/data/laundry-data.json`
+- 每次覆盖写入前，会在 `server/data/backups/` 下生成一份时间戳备份
+- `server/data/laundry-data.json` 已加入 `.gitignore`，不会跟着代码一起推到 GitHub
+
+## 当前功能
+
+- 送洗登记
+- 批次列表
+- 批次详情更新
+- 统计查询
+- 人员管理
+- 导入 2026 年 3 月历史记录
+- 导出 Excel
+- 导出 / 导入本地 JSON 备份

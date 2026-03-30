@@ -4,6 +4,7 @@ import 'vant/lib/index.css'
 import './style.css'
 import App from './App.vue'
 import { initDB } from './db/index.js'
+import { hydrateFromLocalSite } from './utils/serverSync.js'
 
 const routes = [
   { path: '/', redirect: '/send' },
@@ -19,8 +20,17 @@ const router = createRouter({
   routes,
 })
 
+router.afterEach(to => {
+  document.title = `布草送洗管理 - ${to.meta?.title || '主页'}`
+})
+
 async function bootstrap() {
   await initDB()
+  const result = await hydrateFromLocalSite()
+  if (!result.success) {
+    console.warn('[Laundry] local site bootstrap skipped:', result.error)
+  }
+
   const app = createApp(App)
   app.use(router)
   app.mount('#app')

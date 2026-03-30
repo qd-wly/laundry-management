@@ -1,9 +1,9 @@
 <script setup>
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
 const router = useRouter()
-const active = ref(0)
+const route = useRoute()
 
 const tabs = [
   { name: '送洗', icon: 'edit', path: '/send' },
@@ -12,19 +12,22 @@ const tabs = [
   { name: '设置', icon: 'setting-o', path: '/settings' },
 ]
 
-// 根据当前路由设置 tab
-const currentPath = router.currentRoute.value.path
-const idx = tabs.findIndex(t => currentPath.startsWith(t.path))
-if (idx >= 0) active.value = idx
-
-function onTabChange(index) {
-  router.push(tabs[index].path)
-}
+const active = computed({
+  get() {
+    const index = tabs.findIndex(tab => route.path.startsWith(tab.path))
+    return index >= 0 ? index : 0
+  },
+  set(index) {
+    router.push(tabs[index].path)
+  },
+})
 </script>
 
 <template>
-  <router-view />
-  <van-tabbar v-model="active" @change="onTabChange" placeholder>
+  <div class="app-shell">
+    <router-view />
+  </div>
+  <van-tabbar v-model="active" placeholder>
     <van-tabbar-item v-for="tab in tabs" :key="tab.name" :icon="tab.icon">
       {{ tab.name }}
     </van-tabbar-item>

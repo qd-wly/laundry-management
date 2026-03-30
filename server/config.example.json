@@ -1,9 +1,0 @@
-{
-  "port": 8787,
-  "apiKey": "replace-with-a-long-random-secret",
-  "allowedOrigins": [
-    "http://localhost:3000",
-    "https://your-domain.example.com"
-  ],
-  "dataFile": "./server/data/laundry-data.json"
-}

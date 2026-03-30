@@ -1,9 +1,9 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { v4 as uuidv4 } from 'uuid'
+import { showFailToast, showSuccessToast, showToast } from 'vant'
 import { db } from '../db/index.js'
-import { pushToServer } from '../utils/serverSync.js'
-import { showToast, showSuccessToast, showFailToast } from 'vant'
+import { saveToLocalSite } from '../utils/serverSync.js'
 
 const sendDate = ref(new Date().toISOString().slice(0, 10))
 const showDatePicker = ref(false)
@@ -12,57 +12,58 @@ const staffList = ref([])
 const itemTypes = ref([])
 const currentRecords = ref([])
 const note = ref('')
-const syncing = ref(false)
+const saving = ref(false)
 
-// 添加记录表单
 const showAddForm = ref(false)
+const showNotePopup = ref(false)
+const noteDraft = ref('')
 const selectedDeptId = ref(null)
 const selectedStaffId = ref(null)
 const selectedItems = ref({})
 
 const filteredStaff = computed(() => {
   if (!selectedDeptId.value) return []
-  return staffList.value.filter(s => s.departmentId === selectedDeptId.value && s.isActive !== false)
-})
-
-const deptName = computed(() => {
-  const d = departments.value.find(d => d.id === selectedDeptId.value)
-  return d ? d.name : ''
-})
-
-const staffName = computed(() => {
-  const s = staffList.value.find(s => s.id === selectedStaffId.value)
-  return s ? s.name : ''
+  return staffList.value.filter(item => item.departmentId === selectedDeptId.value && item.isActive !== false)
 })
 
 const groupedItemTypes = computed(() => {
   const groups = { personal: [], bedding: [], banquet: [] }
   const labels = { personal: '个人衣物', bedding: '床品', banquet: '宴会布草' }
+
   itemTypes.value.forEach(item => {
     if (groups[item.category]) {
       groups[item.category].push(item)
     }
   })
+
   return Object.entries(groups)
     .filter(([, items]) => items.length > 0)
     .map(([key, items]) => ({ label: labels[key], items }))
 })
 
+const totalItemCount = computed(() => {
+  return currentRecords.value.reduce(
+    (sum, record) => sum + record.items.reduce((itemSum, item) => itemSum + item.quantity, 0),
+    0
+  )
+})
+
 const recordsSummary = computed(() => {
-  return currentRecords.value.map(rec => {
-    const dept = departments.value.find(d => d.id === rec.departmentId)
-    const staff = staffList.value.find(s => s.id === rec.staffId)
-    const items = rec.items
-      .map(i => {
-        const type = itemTypes.value.find(t => t.id === i.itemTypeId)
-        return `${type?.name || ''}x${i.quantity}`
+  return currentRecords.value.map(record => {
+    const dept = departments.value.find(item => item.id === record.departmentId)
+    const staff = staffList.value.find(item => item.id === record.staffId)
+    const itemsText = record.items
+      .map(item => {
+        const type = itemTypes.value.find(typeItem => typeItem.id === item.itemTypeId)
+        return `${type?.name || ''} x${item.quantity}`
       })
       .join('、')
+
     return {
-      ...rec,
+      ...record,
       deptName: dept?.name || '',
       staffName: staff?.name || '',
-      itemsText: items,
+      itemsText,
     }
   })
 })
@@ -85,6 +86,16 @@ function openAddForm() {
   showAddForm.value = true
 }
 
+function openNoteEditor() {
+  noteDraft.value = note.value
+  showNotePopup.value = true
+}
+
+function saveNote() {
+  note.value = noteDraft.value.trim()
+  showNotePopup.value = false
+}
+
 function addRecord() {
   if (!selectedDeptId.value || !selectedStaffId.value) {
     showToast('请选择部门和人员')
@@ -92,8 +103,11 @@ function addRecord() {
   }
 
   const items = Object.entries(selectedItems.value)
-    .filter(([, qty]) => qty > 0)
-    .map(([id, qty]) => ({ itemTypeId: Number(id), quantity: Number(qty) }))
+    .filter(([, qty]) => Number(qty) > 0)
+    .map(([id, qty]) => ({
+      itemTypeId: Number(id),
+      quantity: Number(qty),
+    }))
 
   if (items.length === 0) {
     showToast('请至少填写一项物品数量')
@@ -107,7 +121,7 @@ function addRecord() {
   })
 
   showAddForm.value = false
-  showSuccessToast('已添加')
+  showSuccessToast('已加入本批次')
 }
 
 function removeRecord(index) {
@@ -121,6 +135,7 @@ async function submitBatch() {
   }
 
   const batchId = uuidv4()
+  const now = new Date().toISOString()
   const batch = {
     id: batchId,
     sendDate: sendDate.value,
@@ -128,18 +143,18 @@ async function submitBatch() {
     billingDate: '',
     status: 'washing',
     note: note.value,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    createdAt: now,
+    updatedAt: now,
   }
 
   const records = []
-  for (const rec of currentRecords.value) {
-    for (const item of rec.items) {
+  for (const record of currentRecords.value) {
+    for (const item of record.items) {
       records.push({
         id: uuidv4(),
         batchId,
-        departmentId: rec.departmentId,
-        staffId: rec.staffId,
+        departmentId: record.departmentId,
+        staffId: record.staffId,
         itemTypeId: item.itemTypeId,
         quantity: item.quantity,
         note: '',
@@ -150,18 +165,16 @@ async function submitBatch() {
   await db.batches.add(batch)
   await db.records.bulkAdd(records)
 
-  // 自动同步到服务器
-  syncing.value = true
-  const result = await pushToServer()
-  syncing.value = false
+  saving.value = true
+  const result = await saveToLocalSite()
+  saving.value = false
 
   if (result.success) {
-    showSuccessToast('已提交并同步到服务器')
+    showSuccessToast('已写入本地数据库文件')
   } else {
-    showFailToast(`已保存本地，${result.error || '服务器同步失败'}`)
+    showFailToast(`已保存到浏览器缓存，${result.error || '未写入项目目录数据文件'}`)
   }
 
-  // 重置
   currentRecords.value = []
   note.value = ''
 }
@@ -171,10 +184,54 @@ async function submitBatch() {
   <div class="page">
     <div class="page-title">送洗登记</div>
 
-    <van-cell-group inset>
-      <van-cell title="送洗日期" :value="sendDate" is-link @click="showDatePicker = true" />
-      <van-cell title="备注" :value="note || '无'" is-link @click="note = prompt('输入备注', note) || note" />
-    </van-cell-group>
+    <section class="hero-card">
+      <div class="hero-grid">
+        <div class="hero-metric">
+          <span class="hero-label">送洗日期</span>
+          <strong>{{ sendDate }}</strong>
+        </div>
+        <div class="hero-metric">
+          <span class="hero-label">本批人数</span>
+          <strong>{{ currentRecords.length }}</strong>
+        </div>
+        <div class="hero-metric">
+          <span class="hero-label">总件数</span>
+          <strong>{{ totalItemCount }}</strong>
+        </div>
+      </div>
+    </section>
+
+    <div class="section-stack">
+      <van-cell-group inset>
+        <van-cell title="送洗日期" :value="sendDate" is-link @click="showDatePicker = true" />
+        <van-cell title="备注" :value="note || '点击填写'" is-link @click="openNoteEditor" />
+      </van-cell-group>
+
+      <van-cell-group v-if="recordsSummary.length > 0" inset title="本批次记录">
+        <van-swipe-cell v-for="(record, index) in recordsSummary" :key="`${record.staffId}-${index}`">
+          <van-cell :title="`${record.deptName} - ${record.staffName}`" :label="record.itemsText" />
+          <template #right>
+            <van-button square type="danger" text="删除" style="height: 100%" @click="removeRecord(index)" />
+          </template>
+        </van-swipe-cell>
+      </van-cell-group>
+    </div>
+
+    <div class="bottom-actions">
+      <van-button block plain type="primary" icon="plus" @click="openAddForm">
+        添加人员物品
+      </van-button>
+      <van-button
+        v-if="currentRecords.length > 0"
+        block
+        type="primary"
+        :loading="saving"
+        loading-text="写入本地数据库..."
+        @click="submitBatch"
+      >
+        提交送洗批次（{{ currentRecords.length }}条记录）
+      </van-button>
+    </div>
 
     <van-popup v-model:show="showDatePicker" position="bottom" round>
       <van-date-picker
@@ -186,38 +243,29 @@ async function submitBatch() {
       />
     </van-popup>
 
-    <!-- 已添加的记录 -->
-    <div v-if="recordsSummary.length > 0" style="margin-top: 12px">
-      <van-cell-group inset title="本批次记录">
-        <van-swipe-cell v-for="(rec, idx) in recordsSummary" :key="idx">
-          <van-cell :title="`${rec.deptName} - ${rec.staffName}`" :label="rec.itemsText" />
-          <template #right>
-            <van-button square type="danger" text="删除" style="height: 100%" @click="removeRecord(idx)" />
-          </template>
-        </van-swipe-cell>
-      </van-cell-group>
-    </div>
+    <van-popup v-model:show="showNotePopup" position="bottom" round :style="{ height: '42%' }">
+      <div class="popup-sheet">
+        <div class="popup-title">备注</div>
+        <van-field
+          v-model="noteDraft"
+          rows="4"
+          autosize
+          type="textarea"
+          maxlength="120"
+          placeholder="输入本批次的备注信息"
+          show-word-limit
+        />
+        <div class="bottom-actions">
+          <van-button block plain type="primary" @click="showNotePopup = false">取消</van-button>
+          <van-button block type="primary" @click="saveNote">保存备注</van-button>
+        </div>
+      </div>
+    </van-popup>
 
-    <!-- 添加记录按钮 -->
-    <div style="margin: 16px">
-      <van-button block plain type="primary" icon="plus" @click="openAddForm">
-        添加人员物品
-      </van-button>
-    </div>
-
-    <!-- 提交按钮 -->
-    <div style="margin: 0 16px" v-if="currentRecords.length > 0">
-      <van-button block type="primary" :loading="syncing" loading-text="同步中..." @click="submitBatch">
-        提交送洗批次（{{ currentRecords.length }}条记录）
-      </van-button>
-    </div>
-
-    <!-- 添加记录弹窗 -->
-    <van-popup v-model:show="showAddForm" position="bottom" round :style="{ height: '85%' }" closeable>
-      <div style="padding: 16px; padding-top: 40px">
+    <van-popup v-model:show="showAddForm" position="bottom" round :style="{ height: '84%' }" closeable>
+      <div class="popup-sheet popup-sheet--tall">
         <div class="page-title">添加送洗物品</div>
 
-        <!-- 选部门 -->
         <van-cell-group inset title="选择部门">
           <van-radio-group v-model="selectedDeptId">
             <van-cell
@@ -234,32 +282,30 @@ async function submitBatch() {
           </van-radio-group>
         </van-cell-group>
 
-        <!-- 选人员 -->
         <van-cell-group v-if="selectedDeptId" inset title="选择人员" style="margin-top: 12px">
           <van-radio-group v-model="selectedStaffId">
             <van-cell
-              v-for="s in filteredStaff"
-              :key="s.id"
-              :title="s.name"
+              v-for="staff in filteredStaff"
+              :key="staff.id"
+              :title="staff.name"
               clickable
-              @click="selectedStaffId = s.id"
+              @click="selectedStaffId = staff.id"
             >
               <template #right-icon>
-                <van-radio :name="s.id" />
+                <van-radio :name="staff.id" />
               </template>
             </van-cell>
           </van-radio-group>
-          <van-cell v-if="filteredStaff.length === 0" title="该部门暂无人员，请在设置中添加" />
+          <van-cell v-if="filteredStaff.length === 0" title="该部门暂无人员，请先到设置页添加" />
         </van-cell-group>
 
-        <!-- 填物品数量 -->
         <div v-if="selectedStaffId" style="margin-top: 12px">
           <van-cell-group
             v-for="group in groupedItemTypes"
             :key="group.label"
             inset
             :title="group.label"
-            style="margin-top: 8px"
+            style="margin-top: 10px"
           >
             <van-cell v-for="item in group.items" :key="item.id" :title="item.name">
               <template #right-icon>
@@ -267,16 +313,15 @@ async function submitBatch() {
                   v-model="selectedItems[item.id]"
                   min="0"
                   :default-value="0"
-                  input-width="50px"
-                  button-size="28px"
+                  input-width="56px"
+                  button-size="36px"
                 />
               </template>
             </van-cell>
           </van-cell-group>
         </div>
 
-        <!-- 确认添加 -->
-        <div v-if="selectedStaffId" style="margin: 16px">
+        <div v-if="selectedStaffId" class="bottom-actions">
           <van-button block type="primary" @click="addRecord">确认添加</van-button>
         </div>
       </div>

@@ -7,7 +7,9 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const projectRoot = path.resolve(__dirname, '..')
 const docsDir = path.join(projectRoot, 'docs')
-const defaultConfigPath = path.join(__dirname, 'config.json')
+const port = Number(process.env.PORT || 8788)
+const dataFile = path.join(projectRoot, 'server', 'data', 'laundry-data.json')
+const backupDir = path.join(projectRoot, 'server', 'data', 'backups')
 
 const MIME_TYPES = {
   '.css': 'text/css; charset=utf-8',
@@ -35,70 +37,21 @@ async function readJsonIfExists(filePath) {
   try {
     return JSON.parse(await fs.readFile(filePath, 'utf8'))
   } catch (error) {
-    if (error.code === 'ENOENT') return null
+    if (error.code === 'ENOENT') {
+      return null
+    }
     throw error
   }
 }
 
-async function loadConfig() {
-  const fileConfig = (await readJsonIfExists(defaultConfigPath)) || {}
-  const port = Number(process.env.PORT || fileConfig.port || 8787)
-  const apiKey = process.env.LAUNDRY_API_KEY || fileConfig.apiKey || ''
-  const allowedOrigins = process.env.ALLOWED_ORIGINS
-    ? process.env.ALLOWED_ORIGINS.split(',').map(item => item.trim()).filter(Boolean)
-    : Array.isArray(fileConfig.allowedOrigins)
-      ? fileConfig.allowedOrigins
-      : ['*']
-  const dataFile = path.resolve(projectRoot, process.env.DATA_FILE || fileConfig.dataFile || './server/data/laundry-data.json')
-
-  return {
-    port,
-    apiKey,
-    allowedOrigins,
-    dataFile,
-  }
-}
-
-const config = await loadConfig()
-const dataDir = path.dirname(config.dataFile)
-const backupDir = path.join(dataDir, 'backups')
-
 async function ensureDataDirs() {
-  await fs.mkdir(dataDir, { recursive: true })
+  await fs.mkdir(path.dirname(dataFile), { recursive: true })
   await fs.mkdir(backupDir, { recursive: true })
 }
 
-function setCorsHeaders(req, res) {
-  const requestOrigin = req.headers.origin || ''
-  const allowAny = config.allowedOrigins.includes('*')
-  const allowOrigin = allowAny
-    ? '*'
-    : config.allowedOrigins.includes(requestOrigin)
-      ? requestOrigin
-      : config.allowedOrigins[0] || ''
-
-  if (allowOrigin) {
-    res.setHeader('Access-Control-Allow-Origin', allowOrigin)
-  }
-  if (!allowAny) {
-    res.setHeader('Vary', 'Origin')
-  }
-
-  res.setHeader('Access-Control-Allow-Methods', 'GET,PUT,OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization')
-}
-
-function sendJson(req, res, statusCode, payload) {
-  setCorsHeaders(req, res)
+function sendJson(res, statusCode, payload) {
   res.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8' })
   res.end(JSON.stringify(payload))
-}
-
-function isAuthorized(req) {
-  if (!config.apiKey) return false
-  const authHeader = req.headers.authorization || ''
-  const expected = `Bearer ${config.apiKey}`
-  return authHeader === expected
 }
 
 async function readRequestBody(req) {
@@ -107,13 +60,16 @@ async function readRequestBody(req) {
     chunks.push(chunk)
   }
 
-  if (chunks.length === 0) return {}
+  if (chunks.length === 0) {
+    return {}
+  }
+
   const raw = Buffer.concat(chunks).toString('utf8')
   return raw ? JSON.parse(raw) : {}
 }
 
 async function readSnapshot() {
-  const fileData = await readJsonIfExists(config.dataFile)
+  const fileData = await readJsonIfExists(dataFile)
   if (!fileData) {
     return null
   }
@@ -134,7 +90,7 @@ async function writeSnapshot(snapshot) {
 
   await ensureDataDirs()
 
-  const current = await readJsonIfExists(config.dataFile)
+  const current = await readJsonIfExists(dataFile)
   if (current) {
     const backupPath = path.join(
       backupDir,
@@ -143,25 +99,30 @@ async function writeSnapshot(snapshot) {
     await fs.writeFile(backupPath, `${JSON.stringify(current, null, 2)}\n`, 'utf8')
   }
 
-  const tempPath = `${config.dataFile}.tmp`
+  const tempPath = `${dataFile}.tmp`
   await fs.writeFile(tempPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8')
-  await fs.rename(tempPath, config.dataFile)
+  await fs.rename(tempPath, dataFile)
 
-  return { snapshot: normalized, savedAt }
+  return {
+    snapshot: normalized,
+    savedAt,
+  }
 }
 
 function resolveStaticFile(requestPath) {
   const cleanPath = requestPath.split('?')[0]
   const relativePath = cleanPath === '/' ? 'index.html' : cleanPath.replace(/^\/+/, '')
   const resolvedPath = path.resolve(docsDir, relativePath)
-  if (!resolvedPath.startsWith(docsDir)) return null
+  if (!resolvedPath.startsWith(docsDir)) {
+    return null
+  }
   return resolvedPath
 }
 
 async function serveStatic(req, res) {
   const resolvedPath = resolveStaticFile(req.url || '/')
   if (!resolvedPath) {
-    sendJson(req, res, 400, { error: '非法路径' })
+    sendJson(res, 400, { error: '非法路径' })
     return
   }
 
@@ -176,7 +137,7 @@ async function serveStatic(req, res) {
     }
   } catch (error) {
     if (error.code !== 'ENOENT') {
-      sendJson(req, res, 500, { error: error.message })
+      sendJson(res, 500, { error: error.message })
       return
     }
   }
@@ -185,55 +146,45 @@ async function serveStatic(req, res) {
     const indexFile = path.join(docsDir, 'index.html')
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
     res.end(await fs.readFile(indexFile))
-  } catch (error) {
-    sendJson(req, res, 404, { error: '未找到前端构建产物，请先执行 npm run build' })
+  } catch {
+    sendJson(res, 404, { error: '未找到前端构建产物，请先执行 npm run build' })
   }
 }
 
 const server = http.createServer(async (req, res) => {
   try {
-    setCorsHeaders(req, res)
-
-    if (req.method === 'OPTIONS') {
-      res.writeHead(204)
-      res.end()
-      return
-    }
-
     const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`)
 
     if (url.pathname === '/api/health' && req.method === 'GET') {
-      sendJson(req, res, 200, {
+      const snapshot = await readSnapshot()
+      sendJson(res, 200, {
         ok: true,
-        savedAt: (await readSnapshot())?.savedAt || '',
+        savedAt: snapshot?.savedAt || '',
+        dataFile,
         now: new Date().toISOString(),
       })
       return
     }
 
-    if (url.pathname === '/api/sync') {
-      if (!isAuthorized(req)) {
-        sendJson(req, res, 401, { error: '未授权，请检查访问密钥' })
-        return
-      }
-
+    if (url.pathname === '/api/local-data') {
       if (req.method === 'GET') {
         const data = await readSnapshot()
-        sendJson(req, res, 200, data || { snapshot: null, savedAt: '' })
+        sendJson(res, 200, data || { snapshot: null, savedAt: '' })
         return
       }
 
       if (req.method === 'PUT') {
         const body = await readRequestBody(req)
         const data = await writeSnapshot(body.snapshot || body)
-        sendJson(req, res, 200, {
+        sendJson(res, 200, {
           success: true,
           savedAt: data.savedAt,
+          dataFile,
         })
         return
       }
 
-      sendJson(req, res, 405, { error: '不支持的请求方法' })
+      sendJson(res, 405, { error: '不支持的请求方法' })
       return
     }
 
@@ -242,19 +193,15 @@ const server = http.createServer(async (req, res) => {
       return
     }
 
-    sendJson(req, res, 404, { error: '未找到接口' })
+    sendJson(res, 404, { error: '未找到接口' })
   } catch (error) {
-    sendJson(req, res, 500, { error: error.message || '服务器错误' })
+    sendJson(res, 500, { error: error.message || '本地服务异常' })
   }
 })
 
 await ensureDataDirs()
 
-server.listen(config.port, '0.0.0.0', () => {
-  console.log(`Laundry server running at http://0.0.0.0:${config.port}`)
-  console.log(`Data file: ${config.dataFile}`)
-  console.log(`Allowed origins: ${config.allowedOrigins.join(', ')}`)
-  if (!config.apiKey) {
-    console.warn('Warning: missing apiKey. API will reject sync requests until apiKey is configured.')
-  }
+server.listen(port, '0.0.0.0', () => {
+  console.log(`Laundry local site running at http://127.0.0.1:${port}`)
+  console.log(`Data file: ${dataFile}`)
 })

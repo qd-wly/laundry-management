@@ -1,8 +1,8 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { computed, onActivated, onMounted, ref } from 'vue'
+import { showSuccessToast } from 'vant'
 import { db } from '../db/index.js'
 import { exportToExcel } from '../utils/export.js'
-import { showSuccessToast } from 'vant'
 
 const batches = ref([])
 const records = ref([])
@@ -13,46 +13,40 @@ const itemTypes = ref([])
 const selectedYear = ref(new Date().getFullYear())
 const selectedMonth = ref(new Date().getMonth() + 1)
 
-onMounted(async () => {
+async function loadData() {
   batches.value = await db.batches.toArray()
   records.value = await db.records.toArray()
   departments.value = await db.departments.toArray()
   staffList.value = await db.staff.toArray()
   itemTypes.value = await db.itemTypes.orderBy('sortOrder').toArray()
-})
+}
+
+onMounted(loadData)
+onActivated(loadData)
 
 const filteredData = computed(() => {
   const prefix = `${selectedYear.value}-${String(selectedMonth.value).padStart(2, '0')}`
-  const monthBatches = batches.value.filter(b => b.sendDate.startsWith(prefix))
-  const batchIds = new Set(monthBatches.map(b => b.id))
-  const monthRecords = records.value.filter(r => batchIds.has(r.batchId))
+  const monthBatches = batches.value.filter(batch => batch.sendDate.startsWith(prefix))
+  const batchIds = new Set(monthBatches.map(batch => batch.id))
+  const monthRecords = records.value.filter(record => batchIds.has(record.batchId))
 
-  // 按物品汇总
   const itemSummary = {}
-  monthRecords.forEach(r => {
-    const name = itemTypes.value.find(i => i.id === r.itemTypeId)?.name || '未知'
-    itemSummary[name] = (itemSummary[name] || 0) + r.quantity
-  })
-
-  // 按部门汇总
   const deptSummary = {}
-  monthRecords.forEach(r => {
-    const name = departments.value.find(d => d.id === r.departmentId)?.name || '未知'
-    deptSummary[name] = (deptSummary[name] || 0) + r.quantity
-  })
-
-  // 按人员汇总
   const staffSummary = {}
-  monthRecords.forEach(r => {
-    const name = staffList.value.find(s => s.id === r.staffId)?.name || '未知'
-    staffSummary[name] = (staffSummary[name] || 0) + r.quantity
-  })
 
-  const totalItems = monthRecords.reduce((sum, r) => sum + r.quantity, 0)
+  monthRecords.forEach(record => {
+    const itemName = itemTypes.value.find(item => item.id === record.itemTypeId)?.name || '未知'
+    const deptName = departments.value.find(dept => dept.id === record.departmentId)?.name || '未知'
+    const staffName = staffList.value.find(staff => staff.id === record.staffId)?.name || '未知'
+
+    itemSummary[itemName] = (itemSummary[itemName] || 0) + record.quantity
+    deptSummary[deptName] = (deptSummary[deptName] || 0) + record.quantity
+    staffSummary[staffName] = (staffSummary[staffName] || 0) + record.quantity
+  })
 
   return {
     batchCount: monthBatches.length,
-    totalItems,
+    totalItems: monthRecords.reduce((sum, record) => sum + record.quantity, 0),
     itemSummary: Object.entries(itemSummary).sort((a, b) => b[1] - a[1]),
     deptSummary: Object.entries(deptSummary).sort((a, b) => b[1] - a[1]),
     staffSummary: Object.entries(staffSummary).sort((a, b) => b[1] - a[1]),
@@ -60,13 +54,13 @@ const filteredData = computed(() => {
 })
 
 const years = computed(() => {
-  const curr = new Date().getFullYear()
-  return [curr - 1, curr, curr + 1]
+  const currentYear = new Date().getFullYear()
+  return [currentYear - 1, currentYear, currentYear + 1]
 })
 
 async function doExport() {
   await exportToExcel(selectedYear.value, selectedMonth.value)
-  showSuccessToast('导出成功')
+  showSuccessToast('本月 Excel 已导出')
 }
 </script>
 
@@ -74,56 +68,77 @@ async function doExport() {
   <div class="page">
     <div class="page-title">统计查询</div>
 
-    <!-- 年月选择 -->
-    <van-cell-group inset>
-      <van-cell title="年份">
-        <template #right-icon>
-          <van-radio-group v-model="selectedYear" direction="horizontal">
-            <van-radio v-for="y in years" :key="y" :name="y">{{ y }}</van-radio>
-          </van-radio-group>
-        </template>
-      </van-cell>
-      <van-cell title="月份">
-        <template #right-icon>
-          <div style="display: flex; flex-wrap: wrap; gap: 4px; max-width: 200px; justify-content: flex-end">
-            <van-tag
-              v-for="m in 12"
-              :key="m"
-              :type="selectedMonth === m ? 'primary' : 'default'"
-              size="medium"
-              style="cursor: pointer"
-              @click="selectedMonth = m"
-            >
-              {{ m }}月
-            </van-tag>
-          </div>
-        </template>
-      </van-cell>
-    </van-cell-group>
+    <section class="summary-grid">
+      <article class="summary-card">
+        <span class="summary-label">当月批次</span>
+        <strong>{{ filteredData.batchCount }}</strong>
+      </article>
+      <article class="summary-card">
+        <span class="summary-label">当月总件数</span>
+        <strong>{{ filteredData.totalItems }}</strong>
+      </article>
+    </section>
 
-    <!-- 概览 -->
-    <van-cell-group inset title="概览" style="margin-top: 12px">
-      <van-cell title="批次数" :value="filteredData.batchCount" />
-      <van-cell title="总件数" :value="filteredData.totalItems" />
-    </van-cell-group>
+    <div class="section-stack">
+      <van-cell-group inset>
+        <van-cell title="年份">
+          <template #right-icon>
+            <van-radio-group v-model="selectedYear" direction="horizontal">
+              <van-radio v-for="year in years" :key="year" :name="year">{{ year }}</van-radio>
+            </van-radio-group>
+          </template>
+        </van-cell>
+        <van-cell title="月份">
+          <template #right-icon>
+            <div class="month-picker">
+              <van-tag
+                v-for="month in 12"
+                :key="month"
+                :type="selectedMonth === month ? 'primary' : 'default'"
+                size="medium"
+                @click="selectedMonth = month"
+              >
+                {{ month }}月
+              </van-tag>
+            </div>
+          </template>
+        </van-cell>
+      </van-cell-group>
 
-    <!-- 按物品 -->
-    <van-cell-group v-if="filteredData.itemSummary.length > 0" inset title="物品统计" style="margin-top: 12px">
-      <van-cell v-for="[name, count] in filteredData.itemSummary" :key="name" :title="name" :value="`${count} 件`" />
-    </van-cell-group>
+      <van-cell-group v-if="filteredData.itemSummary.length > 0" inset title="物品统计">
+        <van-cell
+          v-for="[name, count] in filteredData.itemSummary"
+          :key="name"
+          :title="name"
+          :value="`${count} 件`"
+        />
+      </van-cell-group>
 
-    <!-- 按部门 -->
-    <van-cell-group v-if="filteredData.deptSummary.length > 0" inset title="部门统计" style="margin-top: 12px">
-      <van-cell v-for="[name, count] in filteredData.deptSummary" :key="name" :title="name" :value="`${count} 件`" />
-    </van-cell-group>
+      <van-cell-group v-if="filteredData.deptSummary.length > 0" inset title="部门统计">
+        <van-cell
+          v-for="[name, count] in filteredData.deptSummary"
+          :key="name"
+          :title="name"
+          :value="`${count} 件`"
+        />
+      </van-cell-group>
 
-    <!-- 按人员 -->
-    <van-cell-group v-if="filteredData.staffSummary.length > 0" inset title="人员统计" style="margin-top: 12px">
-      <van-cell v-for="[name, count] in filteredData.staffSummary" :key="name" :title="name" :value="`${count} 件`" />
-    </van-cell-group>
+      <van-cell-group v-if="filteredData.staffSummary.length > 0" inset title="人员统计">
+        <van-cell
+          v-for="[name, count] in filteredData.staffSummary"
+          :key="name"
+          :title="name"
+          :value="`${count} 件`"
+        />
+      </van-cell-group>
 
-    <!-- 导出 -->
-    <div style="margin: 16px">
+      <van-empty
+        v-if="filteredData.itemSummary.length === 0 && filteredData.deptSummary.length === 0 && filteredData.staffSummary.length === 0"
+        description="当前月份暂无数据"
+      />
+    </div>
+
+    <div class="bottom-actions">
       <van-button block plain type="primary" icon="down" @click="doExport">
         导出本月 Excel
       </van-button>
