@@ -1,35 +1,50 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { devMode } from './utils/devModeState.js'
 
 const router = useRouter()
 const route = useRoute()
 
 const tabs = [
-  { name: '送洗', icon: 'edit', path: '/send' },
-  { name: '批次', icon: 'bars', path: '/batches' },
-  { name: '统计', icon: 'chart-trending-o', path: '/stats' },
-  { name: '设置', icon: 'setting-o', path: '/settings' },
+  { name: '流程中心', icon: 'todo-list-o', path: '/send' },
+  { name: '批次台账', icon: 'bars', path: '/batches' },
+  { name: '统计查询', icon: 'chart-trending-o', path: '/stats' },
+  { name: '系统设置', icon: 'setting-o', path: '/settings' },
 ]
 
-const active = computed({
-  get() {
-    const index = tabs.findIndex(tab => route.path.startsWith(tab.path))
-    return index >= 0 ? index : 0
-  },
-  set(index) {
-    router.push(tabs[index].path)
-  },
+const activeTabPath = computed(() => {
+  const match = tabs.find(tab => route.path.startsWith(tab.path))
+  return match?.path || ''
 })
 </script>
 
 <template>
-  <div class="app-shell">
-    <router-view />
+  <div v-if="devMode" class="dev-mode-banner">
+    <van-icon name="warning-o" size="14" />
+    开发模式 · 所有操作不写入真实数据库
   </div>
-  <van-tabbar v-model="active" placeholder>
-    <van-tabbar-item v-for="tab in tabs" :key="tab.name" :icon="tab.icon">
-      {{ tab.name }}
-    </van-tabbar-item>
-  </van-tabbar>
+  <div class="app-shell">
+    <router-view v-slot="{ Component }">
+      <keep-alive :include="['Send', 'Batches', 'Stats', 'Settings']">
+        <component :is="Component" />
+      </keep-alive>
+    </router-view>
+  </div>
+
+  <div class="bottom-dock-wrap">
+    <nav class="bottom-dock">
+      <button
+        v-for="tab in tabs"
+        :key="tab.path"
+        type="button"
+        class="dock-tab"
+        :class="{ 'is-active': activeTabPath === tab.path }"
+        @click="router.push(tab.path)"
+      >
+        <van-icon :name="tab.icon" size="20" />
+        <span>{{ tab.name }}</span>
+      </button>
+    </nav>
+  </div>
 </template>

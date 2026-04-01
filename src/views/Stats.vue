@@ -1,8 +1,10 @@
 <script setup>
+defineOptions({ name: 'Stats' })
 import { computed, onActivated, onMounted, ref } from 'vue'
 import { showSuccessToast } from 'vant'
 import { db } from '../db/index.js'
 import { exportToExcel } from '../utils/export.js'
+import { summarizeRecordStatus } from '../utils/recordStatus.js'
 
 const batches = ref([])
 const records = ref([])
@@ -13,6 +15,9 @@ const itemTypes = ref([])
 const selectedYear = ref(new Date().getFullYear())
 const selectedMonth = ref(new Date().getMonth() + 1)
 
+onMounted(loadData)
+onActivated(loadData)
+
 async function loadData() {
   batches.value = await db.batches.toArray()
   records.value = await db.records.toArray()
@@ -20,9 +25,6 @@ async function loadData() {
   staffList.value = await db.staff.toArray()
   itemTypes.value = await db.itemTypes.orderBy('sortOrder').toArray()
 }
-
-onMounted(loadData)
-onActivated(loadData)
 
 const filteredData = computed(() => {
   const prefix = `${selectedYear.value}-${String(selectedMonth.value).padStart(2, '0')}`
@@ -33,6 +35,7 @@ const filteredData = computed(() => {
   const itemSummary = {}
   const deptSummary = {}
   const staffSummary = {}
+  const statusSummary = summarizeRecordStatus(monthRecords)
 
   monthRecords.forEach(record => {
     const itemName = itemTypes.value.find(item => item.id === record.itemTypeId)?.name || '未知'
@@ -47,6 +50,7 @@ const filteredData = computed(() => {
   return {
     batchCount: monthBatches.length,
     totalItems: monthRecords.reduce((sum, record) => sum + record.quantity, 0),
+    statusSummary,
     itemSummary: Object.entries(itemSummary).sort((a, b) => b[1] - a[1]),
     deptSummary: Object.entries(deptSummary).sort((a, b) => b[1] - a[1]),
     staffSummary: Object.entries(staffSummary).sort((a, b) => b[1] - a[1]),
@@ -60,7 +64,7 @@ const years = computed(() => {
 
 async function doExport() {
   await exportToExcel(selectedYear.value, selectedMonth.value)
-  showSuccessToast('本月 Excel 已导出')
+  showSuccessToast('Excel 已导出')
 }
 </script>
 
@@ -68,79 +72,99 @@ async function doExport() {
   <div class="page">
     <div class="page-title">统计查询</div>
 
-    <section class="summary-grid">
-      <article class="summary-card">
-        <span class="summary-label">当月批次</span>
-        <strong>{{ filteredData.batchCount }}</strong>
-      </article>
-      <article class="summary-card">
-        <span class="summary-label">当月总件数</span>
-        <strong>{{ filteredData.totalItems }}</strong>
-      </article>
-    </section>
-
     <div class="section-stack">
-      <van-cell-group inset>
-        <van-cell title="年份">
-          <template #right-icon>
-            <van-radio-group v-model="selectedYear" direction="horizontal">
-              <van-radio v-for="year in years" :key="year" :name="year">{{ year }}</van-radio>
-            </van-radio-group>
-          </template>
-        </van-cell>
-        <van-cell title="月份">
-          <template #right-icon>
-            <div class="month-picker">
-              <van-tag
-                v-for="month in 12"
-                :key="month"
-                :type="selectedMonth === month ? 'primary' : 'default'"
-                size="medium"
-                @click="selectedMonth = month"
-              >
-                {{ month }}月
-              </van-tag>
+      <div class="stats-date-row">
+        <div class="stats-year-group">
+          <button
+            v-for="year in years"
+            :key="year"
+            type="button"
+            class="filter-chip"
+            :class="{ 'is-active': selectedYear === year }"
+            @click="selectedYear = year"
+          >
+            {{ year }}
+          </button>
+        </div>
+        <div class="stats-month-group">
+          <button
+            v-for="month in 12"
+            :key="month"
+            type="button"
+            class="month-chip"
+            :class="{ 'month-chip--active': selectedMonth === month }"
+            @click="selectedMonth = month"
+          >
+            {{ month }}月
+          </button>
+        </div>
+      </div>
+
+      <div class="intake-bar">
+        <div class="intake-bar__cell">
+          <span>批次</span>
+          <strong>{{ filteredData.batchCount }}</strong>
+        </div>
+        <div class="intake-bar__cell">
+          <span>总件数</span>
+          <strong>{{ filteredData.totalItems }}</strong>
+        </div>
+        <div class="intake-bar__cell">
+          <span>待送洗</span>
+          <strong>{{ filteredData.statusSummary.pending }}</strong>
+        </div>
+        <div class="intake-bar__cell">
+          <span>待领取</span>
+          <strong>{{ filteredData.statusSummary.washed }}</strong>
+        </div>
+        <div class="intake-bar__cell">
+          <span>待发放</span>
+          <strong>{{ filteredData.statusSummary.received }}</strong>
+        </div>
+        <div class="intake-bar__cell">
+          <span>已发放</span>
+          <strong>{{ filteredData.statusSummary.distributed }}</strong>
+        </div>
+      </div>
+
+      <template v-if="filteredData.itemSummary.length > 0 || filteredData.deptSummary.length > 0 || filteredData.staffSummary.length > 0">
+        <div v-if="filteredData.itemSummary.length > 0" class="stat-group">
+          <div class="stat-group__title">衣物</div>
+          <div class="stat-group__list">
+            <div v-for="[name, count] in filteredData.itemSummary" :key="name" class="stat-row">
+              <span class="stat-row__name">{{ name }}</span>
+              <span class="stat-row__value">{{ count }} 件</span>
             </div>
-          </template>
-        </van-cell>
-      </van-cell-group>
+          </div>
+        </div>
 
-      <van-cell-group v-if="filteredData.itemSummary.length > 0" inset title="物品统计">
-        <van-cell
-          v-for="[name, count] in filteredData.itemSummary"
-          :key="name"
-          :title="name"
-          :value="`${count} 件`"
-        />
-      </van-cell-group>
+        <div v-if="filteredData.deptSummary.length > 0" class="stat-group">
+          <div class="stat-group__title">部门</div>
+          <div class="stat-group__list">
+            <div v-for="[name, count] in filteredData.deptSummary" :key="name" class="stat-row">
+              <span class="stat-row__name">{{ name }}</span>
+              <span class="stat-row__value">{{ count }} 件</span>
+            </div>
+          </div>
+        </div>
 
-      <van-cell-group v-if="filteredData.deptSummary.length > 0" inset title="部门统计">
-        <van-cell
-          v-for="[name, count] in filteredData.deptSummary"
-          :key="name"
-          :title="name"
-          :value="`${count} 件`"
-        />
-      </van-cell-group>
+        <div v-if="filteredData.staffSummary.length > 0" class="stat-group">
+          <div class="stat-group__title">人员</div>
+          <div class="stat-group__list">
+            <div v-for="[name, count] in filteredData.staffSummary" :key="name" class="stat-row">
+              <span class="stat-row__name">{{ name }}</span>
+              <span class="stat-row__value">{{ count }} 件</span>
+            </div>
+          </div>
+        </div>
+      </template>
 
-      <van-cell-group v-if="filteredData.staffSummary.length > 0" inset title="人员统计">
-        <van-cell
-          v-for="[name, count] in filteredData.staffSummary"
-          :key="name"
-          :title="name"
-          :value="`${count} 件`"
-        />
-      </van-cell-group>
-
-      <van-empty
-        v-if="filteredData.itemSummary.length === 0 && filteredData.deptSummary.length === 0 && filteredData.staffSummary.length === 0"
-        description="当前月份暂无数据"
-      />
+      <van-empty v-else description="当前月份暂无数据" />
     </div>
 
     <div class="bottom-actions">
       <van-button block plain type="primary" icon="down" @click="doExport">
-        导出本月 Excel
+        导出当月 Excel
       </van-button>
     </div>
   </div>

@@ -22,7 +22,7 @@ function createWindow() {
     show: false,
     center: true,
     title: '布草送洗管理',
-    backgroundColor: '#edf1f6',
+    backgroundColor: '#0f1318',
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -31,7 +31,16 @@ function createWindow() {
     },
   })
 
+  mainWindow.webContents.session.setPermissionCheckHandler((_webContents, permission) => {
+    return ['media', 'camera', 'microphone'].includes(permission)
+  })
+
+  mainWindow.webContents.session.setPermissionRequestHandler((_webContents, permission, callback) => {
+    callback(['media', 'camera', 'microphone'].includes(permission))
+  })
+
   mainWindow.once('ready-to-show', () => {
+    mainWindow.maximize()
     mainWindow.show()
   })
 
@@ -47,6 +56,9 @@ function registerIpc() {
   ipcMain.handle('laundry:get-status', async () => storage.getStatus(app))
   ipcMain.handle('laundry:read-snapshot', async () => storage.readSnapshot(app))
   ipcMain.handle('laundry:write-snapshot', async (_event, snapshot) => storage.writeSnapshot(app, snapshot))
+  ipcMain.handle('laundry:set-title', async (_event, title) => {
+    if (mainWindow) mainWindow.setTitle(title)
+  })
 }
 
 app.whenReady().then(async () => {

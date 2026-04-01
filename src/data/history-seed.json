@@ -1,11 +1,11 @@
 {
-  "generatedAt": "2026-03-30T08:07:14.898Z",
+  "generatedAt": "2026-03-31T06:56:34.827Z",
   "sourceDir": "C:\\Local\\上班库\\02_Work\\所有\\运营管理\\物业管理\\布草\\送洗记录",
   "summary": {
-    "fileCount": 8,
-    "batchCount": 75,
-    "recordCount": 234,
-    "itemRecordCount": 371
+    "fileCount": 9,
+    "batchCount": 76,
+    "recordCount": 239,
+    "itemRecordCount": 380
   },
   "batches": [
     {
@@ -18,6 +18,7 @@
       "notes": [],
       "sourceFile": "25年三月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -61,6 +62,7 @@
       "notes": [],
       "sourceFile": "25年三月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -118,6 +120,7 @@
       "notes": [],
       "sourceFile": "25年三月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "运行中心",
@@ -161,6 +164,7 @@
       "notes": [],
       "sourceFile": "25年三月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -252,6 +256,7 @@
       "notes": [],
       "sourceFile": "25年三月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "综合服务部",
@@ -275,6 +280,7 @@
       "notes": [],
       "sourceFile": "25年三月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -342,6 +348,7 @@
       "notes": [],
       "sourceFile": "25年三月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -397,6 +404,7 @@
       "notes": [],
       "sourceFile": "25年三月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -440,6 +448,7 @@
       "notes": [],
       "sourceFile": "25年三月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -463,6 +472,7 @@
       "notes": [],
       "sourceFile": "25年三月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -510,6 +520,7 @@
       "notes": [],
       "sourceFile": "25年三月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -567,6 +578,7 @@
       "notes": [],
       "sourceFile": "25年三月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -590,6 +602,7 @@
       "notes": [],
       "sourceFile": "25年三月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "运行中心",
@@ -613,6 +626,7 @@
       "notes": [],
       "sourceFile": "25年三月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -662,6 +676,7 @@
       ],
       "sourceFile": "25年三月.md",
       "note": "免费洗",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -697,6 +712,7 @@
       ],
       "sourceFile": "25年三月.md",
       "note": "免费洗",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "运行中心",
@@ -754,6 +770,7 @@
       "notes": [],
       "sourceFile": "25年三月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "营销部",
@@ -777,6 +794,7 @@
       "notes": [],
       "sourceFile": "25年三月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "运行中心",
@@ -804,6 +822,7 @@
       "notes": [],
       "sourceFile": "25年三月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -883,6 +902,7 @@
       "notes": [],
       "sourceFile": "25年三月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -934,6 +954,7 @@
       "notes": [],
       "sourceFile": "25年三月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "运行中心",
@@ -995,6 +1016,7 @@
       "notes": [],
       "sourceFile": "25年三月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -1066,6 +1088,7 @@
       "notes": [],
       "sourceFile": "25年三月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "运行中心",
@@ -1089,6 +1112,7 @@
       "notes": [],
       "sourceFile": "25年三月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "运行中心",
@@ -1132,6 +1156,7 @@
       "notes": [],
       "sourceFile": "25年三月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -1179,6 +1204,7 @@
       "notes": [],
       "sourceFile": "25年三月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "运行中心",
@@ -1202,6 +1228,7 @@
       "notes": [],
       "sourceFile": "25年三月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -1235,6 +1262,7 @@
       "notes": [],
       "sourceFile": "25年三月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -1298,6 +1326,7 @@
       "notes": [],
       "sourceFile": "25年三月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -1383,6 +1412,7 @@
       "notes": [],
       "sourceFile": "25年八月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "运行中心",
@@ -1448,6 +1478,7 @@
       "notes": [],
       "sourceFile": "25年八月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "运行中心",
@@ -1495,6 +1526,7 @@
       "notes": [],
       "sourceFile": "25年八月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -1568,6 +1600,7 @@
       "notes": [],
       "sourceFile": "25年八月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -1591,6 +1624,7 @@
       "notes": [],
       "sourceFile": "25年八月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -1624,6 +1658,7 @@
       "notes": [],
       "sourceFile": "25年八月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -1675,6 +1710,7 @@
       "notes": [],
       "sourceFile": "25年八月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "运行中心",
@@ -1732,6 +1768,7 @@
       "notes": [],
       "sourceFile": "25年八月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -1811,6 +1848,7 @@
       "notes": [],
       "sourceFile": "25年八月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "运行中心",
@@ -1878,6 +1916,7 @@
       "notes": [],
       "sourceFile": "25年八月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -1945,6 +1984,7 @@
       "notes": [],
       "sourceFile": "25年八月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -1996,6 +2036,7 @@
       "notes": [],
       "sourceFile": "25年九月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "运行中心",
@@ -2047,6 +2088,7 @@
       "notes": [],
       "sourceFile": "25年九月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -2102,6 +2144,7 @@
       "notes": [],
       "sourceFile": "25年九月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "运行中心",
@@ -2169,6 +2212,7 @@
       ],
       "sourceFile": "25年九月.md",
       "note": "最后几件本天领的",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "运行中心",
@@ -2248,6 +2292,7 @@
       "notes": [],
       "sourceFile": "25年九月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -2295,6 +2340,7 @@
       "notes": [],
       "sourceFile": "25年九月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -2360,6 +2406,7 @@
       "notes": [],
       "sourceFile": "25年九月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "营销部",
@@ -2383,6 +2430,7 @@
       "notes": [],
       "sourceFile": "25年九月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "综合服务部",
@@ -2418,6 +2466,7 @@
       "notes": [],
       "sourceFile": "25年九月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -2545,6 +2594,7 @@
       ],
       "sourceFile": "25年九月.md",
       "note": "这批171只小毛巾在9.23拿的只剩20只、9.26拿了29只",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "综合服务部",
@@ -2594,6 +2644,7 @@
       "notes": [],
       "sourceFile": "25年九月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -2707,6 +2758,7 @@
       "notes": [],
       "sourceFile": "25年九月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -2776,6 +2828,7 @@
       "notes": [],
       "sourceFile": "25年九月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "运行中心",
@@ -2813,6 +2866,7 @@
       "notes": [],
       "sourceFile": "25年九月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -2844,6 +2898,7 @@
       "notes": [],
       "sourceFile": "25年十月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -2899,6 +2954,7 @@
       "notes": [],
       "sourceFile": "25年十月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -2946,6 +3002,7 @@
       "notes": [],
       "sourceFile": "25年十月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "综合服务部",
@@ -2973,6 +3030,7 @@
       "notes": [],
       "sourceFile": "25年十月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -3048,6 +3106,7 @@
       "notes": [],
       "sourceFile": "25年十月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -3099,6 +3158,7 @@
       "notes": [],
       "sourceFile": "25年十月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -3140,6 +3200,7 @@
       "notes": [],
       "sourceFile": "25年十月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -3191,6 +3252,7 @@
       "notes": [],
       "sourceFile": "25年十月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -3232,6 +3294,7 @@
       "notes": [],
       "sourceFile": "25年11月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -3265,6 +3328,7 @@
       "notes": [],
       "sourceFile": "25年11月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -3354,6 +3418,7 @@
       "notes": [],
       "sourceFile": "25年11月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -3409,6 +3474,7 @@
       "notes": [],
       "sourceFile": "25年11月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -3436,6 +3502,7 @@
       "notes": [],
       "sourceFile": "25年11月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -3487,6 +3554,7 @@
       "notes": [],
       "sourceFile": "25年11月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -3524,6 +3592,7 @@
       "notes": [],
       "sourceFile": "25年12月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -3599,6 +3668,7 @@
       "notes": [],
       "sourceFile": "25年12月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -3642,6 +3712,7 @@
       ],
       "sourceFile": "26年1月.md",
       "note": "差床单被罩",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -3685,6 +3756,7 @@
       "notes": [],
       "sourceFile": "26年1月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -3740,6 +3812,7 @@
       "notes": [],
       "sourceFile": "26年1月.md",
       "note": "",
+      "lifecycleHint": "",
       "rows": [
         {
           "departmentName": "综合服务部",
@@ -3776,7 +3849,8 @@
       "billingDate": "",
       "notes": [],
       "sourceFile": "26年3月.md",
-      "note": "今天收到衣服",
+      "note": "",
+      "lifecycleHint": "received_only",
       "rows": [
         {
           "departmentName": "综合服务部",
@@ -3821,7 +3895,8 @@
       "billingDate": "",
       "notes": [],
       "sourceFile": "26年3月.md",
-      "note": "2026-03-30 送洗登记",
+      "note": "",
+      "lifecycleHint": "received_only",
       "rows": [
         {
           "departmentName": "公司领导",
@@ -3870,8 +3945,88 @@
           ]
         },
         {
+          "departmentName": "运行中心",
+          "staffName": "张涛",
+          "items": [
+            {
+              "itemName": "西服",
+              "quantity": 1
+            },
+            {
+              "itemName": "西裤",
+              "quantity": 1
+            },
+            {
+              "itemName": "衬衫",
+              "quantity": 1
+            }
+          ]
+        },
+        {
           "departmentName": "财务部",
           "staffName": "王微",
+          "items": [
+            {
+              "itemName": "羽绒服",
+              "quantity": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "legacy-a3934435",
+      "sourceKey": "26年3月.md#003",
+      "batchNumber": "",
+      "sendDate": "2026-03-31",
+      "receiveDate": "",
+      "billingDate": "",
+      "notes": [],
+      "sourceFile": "26年3月.md",
+      "note": "",
+      "lifecycleHint": "received_only",
+      "rows": [
+        {
+          "departmentName": "展览项目运营部",
+          "staffName": "侯磊",
+          "items": [
+            {
+              "itemName": "羽绒服",
+              "quantity": 1
+            }
+          ]
+        },
+        {
+          "departmentName": "综合办公室",
+          "staffName": "艾星羽",
+          "items": [
+            {
+              "itemName": "衬衫",
+              "quantity": 2
+            }
+          ]
+        },
+        {
+          "departmentName": "综合办公室",
+          "staffName": "夏芳",
+          "items": [
+            {
+              "itemName": "西服",
+              "quantity": 1
+            },
+            {
+              "itemName": "西裤",
+              "quantity": 1
+            },
+            {
+              "itemName": "冲锋衣抓绒款",
+              "quantity": 1
+            }
+          ]
+        },
+        {
+          "departmentName": "采购部",
+          "staffName": "苏燕麟",
           "items": [
             {
               "itemName": "羽绒服",

@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx'
 import { db } from '../db/index.js'
+import { getStatusMeta } from './recordStatus.js'
 
 export async function exportToExcel(year, month) {
   const departments = await db.departments.orderBy('sortOrder').toArray()
@@ -9,35 +10,39 @@ export async function exportToExcel(year, month) {
   let batches = await db.batches.orderBy('sendDate').toArray()
   if (year && month) {
     const prefix = `${year}-${String(month).padStart(2, '0')}`
-    batches = batches.filter(b => b.sendDate.startsWith(prefix))
+    batches = batches.filter(batch => batch.sendDate.startsWith(prefix))
   }
 
   const records = await db.records.toArray()
+  const batchIds = new Set(batches.map(batch => batch.id))
 
-  const deptMap = Object.fromEntries(departments.map(d => [d.id, d.name]))
-  const staffMap = Object.fromEntries(staff.map(s => [s.id, s.name]))
-  const itemMap = Object.fromEntries(itemTypes.map(i => [i.id, i.name]))
+  const deptMap = Object.fromEntries(departments.map(item => [item.id, item.name]))
+  const staffMap = Object.fromEntries(staff.map(item => [item.id, item.name]))
+  const itemMap = Object.fromEntries(itemTypes.map(item => [item.id, item.name]))
+  const batchMap = Object.fromEntries(batches.map(item => [item.id, item]))
 
-  const rows = []
-  for (const batch of batches) {
-    const batchRecords = records.filter(r => r.batchId === batch.id)
-    for (const rec of batchRecords) {
-      rows.push({
-        '送洗日期': batch.sendDate,
-        '领取日期': batch.receiveDate || '',
-        '开单日期': batch.billingDate || '',
-        '状态': batch.status === 'washing' ? '待领取' : batch.status === 'received' ? '已领取' : '已开单',
-        '部门': deptMap[rec.departmentId] || '',
-        '姓名': staffMap[rec.staffId] || '',
-        '物品': itemMap[rec.itemTypeId] || '',
-        '数量': rec.quantity,
-        '备注': rec.note || '',
-      })
-    }
-  }
+  const rows = records
+    .filter(record => batchIds.has(record.batchId))
+    .map(record => {
+      const batch = batchMap[record.batchId] || {}
+      return {
+        接收日期: batch.sendDate || '',
+        当前状态: getStatusMeta(record.status).label,
+        送洗日期: record.sentAt || '',
+        领取日期: record.receivedAt || '',
+        发放日期: record.distributedAt || '',
+        部门: deptMap[record.departmentId] || '',
+        姓名: staffMap[record.staffId] || '',
+        衣物: itemMap[record.itemTypeId] || '',
+        数量: record.quantity,
+        备注: record.note || '',
+        有照片: record.photo ? '是' : '否',
+        批次备注: batch.note || '',
+      }
+    })
 
   if (rows.length === 0) {
-    rows.push({ '送洗日期': '暂无数据' })
+    rows.push({ 接收日期: '暂无数据' })
   }
 
   const ws = XLSX.utils.json_to_sheet(rows)
@@ -47,7 +52,7 @@ export async function exportToExcel(year, month) {
 
   const fileName = year && month
     ? `布草送洗记录_${year}年${month}月.xlsx`
-    : `布草送洗记录_全部.xlsx`
+    : '布草送洗记录_全部.xlsx'
 
   XLSX.writeFile(wb, fileName)
 }

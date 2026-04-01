@@ -3,16 +3,22 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 import 'vant/lib/index.css'
 import './style.css'
 import App from './App.vue'
-import { initDB } from './db/index.js'
-import { hydrateFromDesktopStorage } from './utils/desktopStorage.js'
+import { initDB, runPostHydrateMigrations } from './db/index.js'
+import { hydrateFromDesktopStorage, saveToDesktopStorage } from './utils/desktopStorage.js'
+
+const Send = () => import('./views/Send.vue')
+const Batches = () => import('./views/Batches.vue')
+const BatchDetail = () => import('./views/BatchDetail.vue')
+const Stats = () => import('./views/Stats.vue')
+const Settings = () => import('./views/Settings.vue')
 
 const routes = [
   { path: '/', redirect: '/send' },
-  { path: '/send', component: () => import('./views/Send.vue'), meta: { title: '送洗登记' } },
-  { path: '/batches', component: () => import('./views/Batches.vue'), meta: { title: '批次列表' } },
-  { path: '/batch/:id', component: () => import('./views/BatchDetail.vue'), meta: { title: '批次详情' } },
-  { path: '/stats', component: () => import('./views/Stats.vue'), meta: { title: '统计查询' } },
-  { path: '/settings', component: () => import('./views/Settings.vue'), meta: { title: '设置' } },
+  { path: '/send', component: Send, meta: { title: '流程中心', keepAlive: true } },
+  { path: '/batches', component: Batches, meta: { title: '批次台账', keepAlive: true } },
+  { path: '/batch/:id', component: BatchDetail, meta: { title: '批次详情', keepAlive: false } },
+  { path: '/stats', component: Stats, meta: { title: '统计查询', keepAlive: true } },
+  { path: '/settings', component: Settings, meta: { title: '系统设置', keepAlive: true } },
 ]
 
 const router = createRouter({
@@ -21,7 +27,7 @@ const router = createRouter({
 })
 
 router.afterEach(to => {
-  document.title = `布草送洗管理 - ${to.meta?.title || '主页'}`
+  document.title = `布草送洗管理 - ${to.meta?.title || '首页'}`
 })
 
 async function bootstrap() {
@@ -30,6 +36,7 @@ async function bootstrap() {
   if (!result.success) {
     console.warn('[Laundry] desktop storage bootstrap skipped:', result.error)
   }
+  await runPostHydrateMigrations()
 
   const app = createApp(App)
   app.use(router)

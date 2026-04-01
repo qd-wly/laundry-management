@@ -1,15 +1,14 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+defineOptions({ name: 'Settings' })
+import { onActivated, onMounted, ref } from 'vue'
 import { showConfirmDialog, showFailToast, showSuccessToast, showToast } from 'vant'
 import { db } from '../db/index.js'
 import { exportToExcel } from '../utils/export.js'
-import { getHistorySeedSummary, importHistorySeed } from '../utils/historyImport.js'
 import { exportBackupJson, importBackupJson } from '../utils/localData.js'
 import { getStorageStatus, saveToDesktopStorage } from '../utils/desktopStorage.js'
+import { devMode, enterDevMode, exitDevMode } from '../utils/devMode.js'
 
 const syncing = ref(false)
-const importingHistory = ref(false)
-const marchHistorySummary = getHistorySeedSummary({ year: 2026, month: 3 })
 const backupInput = ref(null)
 const showStaffPopup = ref(false)
 const departments = ref([])
@@ -24,6 +23,11 @@ const localStatus = ref({
 })
 
 onMounted(async () => {
+  await loadBaseData()
+  await refreshLocalStatus()
+})
+
+onActivated(async () => {
   await loadBaseData()
   await refreshLocalStatus()
 })
@@ -104,29 +108,6 @@ async function onBackupFileChange(event) {
   }
 }
 
-async function doImportHistory() {
-  try {
-    await showConfirmDialog({
-      title: '导入 2026 年 3 月',
-      message: `将导入 ${marchHistorySummary.batchCount} 个历史批次，重复导入会按同一历史批次覆盖更新，是否继续？`,
-    })
-
-    importingHistory.value = true
-    const result = await importHistorySeed({ year: 2026, month: 3 })
-    importingHistory.value = false
-    await loadBaseData()
-    await persistLocalDatabase(
-      `已导入 2026 年 3 月 ${result.importedBatchCount} 个批次`,
-      `已导入 2026 年 3 月 ${result.importedBatchCount} 个批次到当前页面缓存`
-    )
-  } catch (error) {
-    importingHistory.value = false
-    if (error?.message) {
-      showFailToast(error.message)
-    }
-  }
-}
-
 function openStaffManager() {
   showStaffPopup.value = true
 }
@@ -150,7 +131,7 @@ async function addStaff() {
 
 async function removeStaff(id) {
   try {
-    await showConfirmDialog({ title: '确认删除', message: '删除后将立即写入本地数据库文件。' })
+    await showConfirmDialog({ title: '确认删除', message: '删除后将立刻写入本地数据库文件。' })
     await db.staff.delete(id)
     await loadBaseData()
     await persistLocalDatabase('人员已从桌面数据文件删除', '人员已从当前页面缓存删除')
@@ -162,55 +143,94 @@ async function removeStaff(id) {
 function getStaffByDept(deptId) {
   return staffList.value.filter(item => item.departmentId === deptId)
 }
+
+async function toggleDevMode() {
+  if (devMode.value) {
+    try {
+      await showConfirmDialog({
+        title: '退出开发模式',
+        message: '将恢复进入开发模式之前的全部数据，当前测试数据会被清除。',
+      })
+      await exitDevMode()
+      showSuccessToast('已退出开发模式，数据已恢复')
+    } catch {
+      // cancelled
+    }
+  } else {
+    try {
+      await showConfirmDialog({
+        title: '进入开发模式',
+        message: '进入后，所有新建、删除、修改操作均不会写入真实数据文件，退出后将自动恢复原始数据。',
+      })
+      await enterDevMode()
+      showSuccessToast('已进入开发模式')
+    } catch {
+      // cancelled
+    }
+  }
+}
 </script>
 
 <template>
   <div class="page">
-    <div class="page-title">设置</div>
+    <div class="page-title">系统设置</div>
 
-    <section class="hero-card">
-      <div class="hero-grid">
-        <div class="hero-metric">
-          <span class="hero-label">运行模式</span>
-          <strong>{{ localStatus.ok ? '桌面程序数据文件' : '当前页面缓存' }}</strong>
-        </div>
-        <div class="hero-metric">
-          <span class="hero-label">最近写入</span>
-          <strong>{{ localStatus.savedAt || '尚未写入' }}</strong>
-        </div>
-        <div class="hero-metric">
-          <span class="hero-label">人员数量</span>
-          <strong>{{ staffList.length }}</strong>
-        </div>
+    <div class="intake-bar" style="margin-bottom: 18px">
+      <div class="intake-bar__cell">
+        <span>数据状态</span>
+        <strong>{{ localStatus.ok ? '正常' : '未连接' }}</strong>
       </div>
-    </section>
+      <div class="intake-bar__cell">
+        <span>人员</span>
+        <strong>{{ staffList.length }} 人</strong>
+      </div>
+    </div>
 
     <div class="section-stack">
-      <van-cell-group inset title="桌面存储">
-        <van-cell title="数据库文件" :label="localStatus.dataFile || '当前不是桌面程序环境，尚未连接桌面数据文件'" />
-        <van-cell title="状态说明" :label="localStatus.ok ? '当前修改会写入桌面程序使用的 JSON 数据文件。' : localStatus.error" />
-        <van-cell title="立即写入桌面数据文件" is-link :loading="syncing" @click="writeSnapshotNow" />
-      </van-cell-group>
+      <div class="settings-group">
+        <div class="settings-group__title">数据</div>
+        <div class="settings-group__body">
+          <button class="settings-row" :class="{ 'is-loading': syncing }" @click="writeSnapshotNow">
+            <span class="settings-row__label">立即保存</span>
+            <span class="settings-row__meta">{{ localStatus.savedAt ? `上次：${localStatus.savedAt}` : '尚未保存' }}</span>
+            <van-icon name="arrow" size="14" class="settings-row__arrow" />
+          </button>
+          <button class="settings-row" @click="doExportAll">
+            <span class="settings-row__label">导出 Excel</span>
+            <van-icon name="arrow" size="14" class="settings-row__arrow" />
+          </button>
+          <button class="settings-row" @click="doExportBackup">
+            <span class="settings-row__label">导出备份</span>
+            <van-icon name="arrow" size="14" class="settings-row__arrow" />
+          </button>
+          <button class="settings-row" @click="chooseBackupFile">
+            <span class="settings-row__label">导入备份</span>
+            <van-icon name="arrow" size="14" class="settings-row__arrow" />
+          </button>
+        </div>
+      </div>
 
-      <van-cell-group inset title="数据管理">
-        <van-cell title="导出全部 Excel" is-link @click="doExportAll" />
-        <van-cell title="导出本地备份 JSON" is-link @click="doExportBackup" />
-        <van-cell title="导入本地备份 JSON" is-link @click="chooseBackupFile" />
-      </van-cell-group>
+      <div class="settings-group">
+        <div class="settings-group__title">开发模式</div>
+        <div class="settings-group__body">
+          <button class="settings-row" :class="{ 'is-active': devMode }" @click="toggleDevMode">
+            <span class="settings-row__label">{{ devMode ? '开发模式运行中' : '进入开发模式' }}</span>
+            <span class="settings-row__meta">{{ devMode ? '点击退出并恢复数据' : '操作不写入真实数据库' }}</span>
+            <van-icon :name="devMode ? 'close' : 'arrow'" size="14" class="settings-row__arrow" />
+          </button>
+        </div>
+      </div>
 
-      <van-cell-group inset title="历史导入">
-        <van-cell
-          :title="`导入 2026 年 3 月历史记录（${marchHistorySummary.batchCount} 批）`"
-          :label="`来源：原始 Markdown 记录，约 ${marchHistorySummary.itemRecordCount} 条物品明细`"
-          is-link
-          :loading="importingHistory"
-          @click="doImportHistory"
-        />
-      </van-cell-group>
-
-      <van-cell-group inset title="人员管理">
-        <van-cell title="管理人员名单" is-link @click="openStaffManager" />
-      </van-cell-group>
+      <div class="settings-group">
+        <div class="settings-group__title">人员管理</div>
+        <div class="settings-group__body">
+          <button class="settings-row" @click="openStaffManager">
+            <span class="settings-row__label">管理人员名单</span>
+            <span class="settings-row__meta">{{ staffList.length }} 人</span>
+            <van-icon name="arrow" size="14" class="settings-row__arrow" />
+          </button>
+        </div>
+      </div>
     </div>
 
     <input
@@ -221,37 +241,36 @@ function getStaffByDept(deptId) {
       @change="onBackupFileChange"
     />
 
-    <van-popup v-model:show="showStaffPopup" position="bottom" round :style="{ height: '82%' }" closeable>
+    <van-popup v-model:show="showStaffPopup" position="bottom" class="popup-fullpage" :style="{ height: '100%' }">
       <div class="popup-sheet popup-sheet--tall">
-        <div class="page-title">人员管理</div>
+        <div class="popup-page-header">
+          <button type="button" class="popup-page-header__back" @click="showStaffPopup = false">
+            <van-icon name="arrow-left" size="18" /><span>返回</span>
+          </button>
+          <div class="popup-page-header__title">人员管理</div>
+        </div>
 
-        <van-cell-group inset title="新增人员">
-          <van-field v-model="newStaffName" label="姓名" placeholder="请输入姓名" />
-          <van-cell title="所属部门">
-            <template #right-icon>
-              <select v-model="newStaffDeptId" class="touch-select">
-                <option :value="null" disabled>选择部门</option>
-                <option v-for="dept in departments" :key="dept.id" :value="dept.id">
-                  {{ dept.name }}
-                </option>
-              </select>
-            </template>
-          </van-cell>
-          <van-cell>
-            <van-button size="small" type="primary" @click="addStaff">添加人员</van-button>
-          </van-cell>
-        </van-cell-group>
+        <div class="form-card">
+          <div class="form-card__title">新增人员</div>
+          <input v-model="newStaffName" class="dark-input" placeholder="请输入姓名" />
+          <select v-model="newStaffDeptId" class="touch-select" style="width: 100%">
+            <option :value="null" disabled>选择部门</option>
+            <option v-for="dept in departments" :key="dept.id" :value="dept.id">
+              {{ dept.name }}
+            </option>
+          </select>
+          <van-button size="small" type="primary" round @click="addStaff">添加人员</van-button>
+        </div>
 
-        <div v-for="dept in departments" :key="dept.id" style="margin-top: 12px">
-          <van-cell-group inset :title="dept.name">
-            <van-swipe-cell v-for="staff in getStaffByDept(dept.id)" :key="staff.id">
-              <van-cell :title="staff.name" />
-              <template #right>
-                <van-button square type="danger" text="删除" style="height: 100%" @click="removeStaff(staff.id)" />
-              </template>
-            </van-swipe-cell>
-            <van-cell v-if="getStaffByDept(dept.id).length === 0" title="暂无人员" />
-          </van-cell-group>
+        <div v-for="dept in departments" :key="dept.id" class="staff-dept-group">
+          <div class="staff-dept-group__title">{{ dept.name }}</div>
+          <div class="staff-dept-group__list">
+            <div v-for="staff in getStaffByDept(dept.id)" :key="staff.id" class="staff-item-row">
+              <span>{{ staff.name }}</span>
+              <van-button size="small" plain type="danger" round @click="removeStaff(staff.id)">删除</van-button>
+            </div>
+            <div v-if="getStaffByDept(dept.id).length === 0" class="staff-dept-empty">暂无人员</div>
+          </div>
         </div>
       </div>
     </van-popup>

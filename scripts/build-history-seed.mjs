@@ -11,6 +11,13 @@ const staffAliasMap = new Map([
   ['马总', '马新枝'],
 ])
 
+const staffDeptMap = new Map([
+  ['侯磊', '展览项目运营部'],
+  ['艾星羽', '综合办公室'],
+  ['夏芳', '综合办公室'],
+  ['苏燕麟', '采购部'],
+])
+
 function parseTableRow(line) {
   return line
     .trim()
@@ -119,6 +126,22 @@ function parseBatchMeta(metaText, baseYear, sourceKey) {
   }
 }
 
+function getLifecycleHint(sourceFile, noteText) {
+  if (sourceFile === '26年3月.md') {
+    return 'received_only'
+  }
+
+  if (/收到衣服|仅接收|只接收/.test(noteText)) {
+    return 'received_only'
+  }
+
+  if (/送洗登记|已送洗/.test(noteText)) {
+    return 'sent_registered'
+  }
+
+  return ''
+}
+
 function parseQuantity(value) {
   const trimmed = value.trim()
   if (!trimmed) return 0
@@ -196,12 +219,37 @@ function parseBatchRows(headerCells, rowCellsList) {
   return rows
 }
 
+function parseLooseTextLine(line) {
+  const trimmed = line.trim()
+  if (!trimmed) return null
+
+  // Match patterns like: 侯磊1件羽绒服 / 艾星羽，2件衬衫 / 夏芳，1件西服，1件西裤
+  const nameMatch = trimmed.match(/^([^\d，,]+?)\s*[，,]?\s*(\d)/)
+  if (!nameMatch) return null
+
+  const staffName = normalizeStaffName(nameMatch[1])
+  if (!staffName) return null
+
+  const items = []
+  for (const match of trimmed.matchAll(/(\d+)\s*件\s*([^，,\d]+)/g)) {
+    const quantity = Number(match[1])
+    const itemName = match[2].trim()
+    if (quantity > 0 && itemName) {
+      items.push({ itemName, quantity })
+    }
+  }
+
+  if (items.length === 0) return null
+  return { staffName, items }
+}
+
 function parseFileContent(fileName, content) {
   const yearMatch = fileName.match(/^(\d{2})年/)
   const baseYear = yearMatch ? 2000 + Number(yearMatch[1]) : new Date().getFullYear()
   const lines = content.split(/\r?\n/)
   const batches = []
   let order = 0
+  let lastTableEndIndex = 0
 
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index].trim()
@@ -221,15 +269,18 @@ function parseFileContent(fileName, content) {
     if (cells[1] === '姓名') {
       const table = collectTable(lines, index)
       const rows = parseBatchRows(table.header, table.rows)
-      if (rows.length > 0 && meta.sendDate) {
-        batches.push({
-          ...meta,
-          sourceFile: fileName,
-          note: meta.notes.join('；'),
-          rows,
-        })
-      }
+        if (rows.length > 0 && meta.sendDate) {
+          const note = meta.notes.join('；')
+          batches.push({
+            ...meta,
+            sourceFile: fileName,
+            note,
+            lifecycleHint: getLifecycleHint(fileName, note),
+            rows,
+          })
+        }
       index = table.nextIndex - 1
+      lastTableEndIndex = table.nextIndex
       continue
     }
 
@@ -252,14 +303,17 @@ function parseFileContent(fileName, content) {
       if (table.header[0] === '部门') {
         const rows = parseBatchRows(table.header, table.rows)
         if (rows.length > 0 && meta.sendDate) {
+          const note = noteParts.filter(Boolean).join('；')
           batches.push({
             ...meta,
             sourceFile: fileName,
-            note: noteParts.filter(Boolean).join('；'),
+            note,
+            lifecycleHint: getLifecycleHint(fileName, note),
             rows,
           })
         }
         index = table.nextIndex - 1
+        lastTableEndIndex = table.nextIndex
         break
       }
 
@@ -274,6 +328,54 @@ function parseFileContent(fileName, content) {
       }
 
       cursor = table.nextIndex
+    }
+  }
+
+  // Parse loose text records after the last table
+  if (lastTableEndIndex < lines.length) {
+    let looseDate = ''
+    const looseRows = []
+
+    for (let index = lastTableEndIndex; index < lines.length; index += 1) {
+      const line = lines[index].trim()
+      if (!line || line.startsWith('#') || line.startsWith('|') || line.startsWith('---')) continue
+
+      // Check for date line like "2026年3月31日"
+      const dateMatch = line.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/)
+      if (dateMatch) {
+        looseDate = `${dateMatch[1]}-${String(Number(dateMatch[2])).padStart(2, '0')}-${String(Number(dateMatch[3])).padStart(2, '0')}`
+        continue
+      }
+
+      const parsed = parseLooseTextLine(line)
+      if (parsed) {
+        looseRows.push({
+          departmentName: staffDeptMap.get(parsed.staffName) || '',
+          staffName: parsed.staffName,
+          items: parsed.items,
+        })
+      }
+    }
+
+    if (looseRows.length > 0) {
+      const sendDate = looseDate || (batches.length > 0 ? batches[batches.length - 1].sendDate : '')
+      if (sendDate) {
+        order += 1
+        const sourceKey = `${fileName}#${String(order).padStart(3, '0')}`
+        batches.push({
+          id: createStableId(sourceKey),
+          sourceKey,
+          batchNumber: '',
+          sendDate,
+          receiveDate: '',
+          billingDate: '',
+          notes: [],
+          sourceFile: fileName,
+          note: '',
+          lifecycleHint: getLifecycleHint(fileName, ''),
+          rows: looseRows,
+        })
+      }
     }
   }
 

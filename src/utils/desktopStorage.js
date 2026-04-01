@@ -1,4 +1,5 @@
 import { collectLocalSnapshot, replaceLocalSnapshot } from './localData.js'
+import { devMode } from './devModeState.js'
 
 function getDesktopApi() {
   return window.laundryDesktop || null
@@ -56,6 +57,10 @@ export async function loadFromDesktopStorage() {
 }
 
 export async function saveToDesktopStorage() {
+  if (devMode.value) {
+    return { success: true, savedAt: '', dataFile: '' }
+  }
+
   const api = getDesktopApi()
   if (!api) {
     return {
