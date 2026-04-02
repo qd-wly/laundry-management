@@ -1,7 +1,9 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { showConfirmDialog, showSuccessToast } from 'vant'
 import { devMode } from './utils/devModeState.js'
+import { enterDevMode } from './utils/devMode.js'
 
 const router = useRouter()
 const route = useRoute()
@@ -17,6 +19,30 @@ const activeTabPath = computed(() => {
   const match = tabs.find(tab => route.path.startsWith(tab.path))
   return match?.path || ''
 })
+
+let longPressTimer = null
+
+function onTabDown(tab) {
+  if (tab.path !== '/settings' || devMode.value) return
+  longPressTimer = setTimeout(async () => {
+    longPressTimer = null
+    try {
+      await showConfirmDialog({
+        title: '进入开发模式',
+        message: '进入后，所有操作均不会写入真实数据文件，退出后自动恢复原始数据。',
+      })
+      await enterDevMode()
+      showSuccessToast('已进入开发模式')
+    } catch {}
+  }, 800)
+}
+
+function onTabUp() {
+  if (longPressTimer) {
+    clearTimeout(longPressTimer)
+    longPressTimer = null
+  }
+}
 </script>
 
 <template>
@@ -24,6 +50,7 @@ const activeTabPath = computed(() => {
     <van-icon name="warning-o" size="14" />
     开发模式 · 所有操作不写入真实数据库
   </div>
+  <div v-if="devMode" class="dev-mode-spacer"></div>
   <div class="app-shell">
     <router-view v-slot="{ Component }">
       <keep-alive :include="['Send', 'Batches', 'Stats', 'Settings']">
@@ -41,6 +68,11 @@ const activeTabPath = computed(() => {
         class="dock-tab"
         :class="{ 'is-active': activeTabPath === tab.path }"
         @click="router.push(tab.path)"
+        @pointerdown="onTabDown(tab)"
+        @pointerup="onTabUp"
+        @pointerleave="onTabUp"
+        @pointercancel="onTabUp"
+        @contextmenu.prevent
       >
         <van-icon :name="tab.icon" size="20" />
         <span>{{ tab.name }}</span>

@@ -52,8 +52,8 @@ export function buildBatchCodeMap(batches) {
 export function getBatchDisplayLabel(batch, batchCodeMap) {
   const date = getBatchDate(batch)
   const code = batchCodeMap.get(batch.id) || ''
-  if (!date) return code ? `${code}批次` : '批次'
-  return code ? `${date} ${code}批次` : date
+  if (!date) return code ? `(${code})` : '批次'
+  return code ? `${date}(${code})` : date
 }
 
 export function getBatchDateValue(batch) {

@@ -59,7 +59,17 @@ const filteredData = computed(() => {
 
 const years = computed(() => {
   const currentYear = new Date().getFullYear()
-  return [currentYear - 1, currentYear, currentYear + 1]
+  return [currentYear]
+})
+
+const inactiveMonths = computed(() => {
+  const s = new Set([1, 2])
+  for (let m = 1; m <= 12; m++) {
+    const prefix = `${selectedYear.value}-${String(m).padStart(2, '0')}`
+    const has = batches.value.some(b => b.sendDate.startsWith(prefix))
+    if (!has) s.add(m)
+  }
+  return s
 })
 
 async function doExport() {
@@ -92,7 +102,7 @@ async function doExport() {
             :key="month"
             type="button"
             class="month-chip"
-            :class="{ 'month-chip--active': selectedMonth === month }"
+            :class="{ 'month-chip--active': selectedMonth === month, 'month-chip--inactive': inactiveMonths.has(month) }"
             @click="selectedMonth = month"
           >
             {{ month }}月
@@ -102,12 +112,8 @@ async function doExport() {
 
       <div class="intake-bar">
         <div class="intake-bar__cell">
-          <span>批次</span>
-          <strong>{{ filteredData.batchCount }}</strong>
-        </div>
-        <div class="intake-bar__cell">
-          <span>总件数</span>
-          <strong>{{ filteredData.totalItems }}</strong>
+          <span>批次 / 总件数</span>
+          <strong>{{ filteredData.batchCount }} / {{ filteredData.totalItems }}</strong>
         </div>
         <div class="intake-bar__cell">
           <span>待送洗</span>
@@ -122,7 +128,7 @@ async function doExport() {
           <strong>{{ filteredData.statusSummary.received }}</strong>
         </div>
         <div class="intake-bar__cell">
-          <span>已发放</span>
+          <span>已完成</span>
           <strong>{{ filteredData.statusSummary.distributed }}</strong>
         </div>
       </div>
@@ -162,10 +168,5 @@ async function doExport() {
       <van-empty v-else description="当前月份暂无数据" />
     </div>
 
-    <div class="bottom-actions">
-      <van-button block plain type="primary" icon="down" @click="doExport">
-        导出当月 Excel
-      </van-button>
-    </div>
   </div>
 </template>

@@ -7,6 +7,7 @@ function normalizeSnapshot(payload = {}) {
     itemTypes: Array.isArray(payload.itemTypes) ? payload.itemTypes : [],
     batches: Array.isArray(payload.batches) ? payload.batches : [],
     records: Array.isArray(payload.records) ? payload.records : [],
+    priceTables: Array.isArray(payload.priceTables) ? payload.priceTables : [],
     exportedAt: payload.exportedAt || new Date().toISOString(),
   }
 }
@@ -44,6 +45,7 @@ export async function collectLocalSnapshot() {
     itemTypes: await db.itemTypes.toArray(),
     batches: await db.batches.toArray(),
     records: await db.records.toArray(),
+    priceTables: await db.priceTables.toArray(),
     exportedAt: new Date().toISOString(),
   })
 }
@@ -51,7 +53,7 @@ export async function collectLocalSnapshot() {
 export async function replaceLocalSnapshot(snapshot) {
   const normalized = normalizeSnapshot(snapshot)
 
-  await db.transaction('rw', db.departments, db.staff, db.itemTypes, db.batches, db.records, async () => {
+  await db.transaction('rw', db.departments, db.staff, db.itemTypes, db.batches, db.records, db.priceTables, async () => {
     await db.departments.clear()
     if (normalized.departments.length > 0) {
       await db.departments.bulkAdd(normalized.departments)
@@ -75,6 +77,11 @@ export async function replaceLocalSnapshot(snapshot) {
     await db.records.clear()
     if (normalized.records.length > 0) {
       await db.records.bulkAdd(normalized.records)
+    }
+
+    await db.priceTables.clear()
+    if (normalized.priceTables.length > 0) {
+      await db.priceTables.bulkAdd(normalized.priceTables)
     }
   })
 

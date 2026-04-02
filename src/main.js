@@ -5,6 +5,7 @@ import './style.css'
 import App from './App.vue'
 import { initDB, runPostHydrateMigrations } from './db/index.js'
 import { hydrateFromDesktopStorage, saveToDesktopStorage } from './utils/desktopStorage.js'
+import { autoRestoreIfNeeded } from './utils/devMode.js'
 
 const Send = () => import('./views/Send.vue')
 const Batches = () => import('./views/Batches.vue')
@@ -31,12 +32,17 @@ router.afterEach(to => {
 })
 
 async function bootstrap() {
-  await initDB()
-  const result = await hydrateFromDesktopStorage()
-  if (!result.success) {
-    console.warn('[Laundry] desktop storage bootstrap skipped:', result.error)
+  try {
+    await initDB()
+    const result = await hydrateFromDesktopStorage()
+    if (!result.success) {
+      console.warn('[Laundry] desktop storage bootstrap skipped:', result.error)
+    }
+    await runPostHydrateMigrations()
+    await autoRestoreIfNeeded()
+  } catch (e) {
+    console.error('[Laundry] bootstrap error:', e?.message || e, e?.stack || '', JSON.stringify(e))
   }
-  await runPostHydrateMigrations()
 
   const app = createApp(App)
   app.use(router)

@@ -29,6 +29,25 @@ db.version(3).stores({
   settings: 'key',
 })
 
+db.version(4).stores({
+  departments: '++id, name, sortOrder',
+  staff: '++id, name, departmentId, isActive',
+  itemTypes: '++id, name, category, sortOrder',
+  batches: 'id, sendDate, createdAt',
+  records: 'id, batchId, departmentId, staffId, itemTypeId, status, sentAt, receivedAt, distributedAt, deliveryId, pickupId',
+  settings: 'key',
+})
+
+db.version(5).stores({
+  departments: '++id, name, sortOrder',
+  staff: '++id, name, departmentId, isActive',
+  itemTypes: '++id, name, category, sortOrder',
+  batches: 'id, sendDate, createdAt',
+  records: 'id, batchId, departmentId, staffId, itemTypeId, status, sentAt, receivedAt, distributedAt, deliveryId, pickupId, distributionId, priceTableId',
+  settings: 'key',
+  priceTables: '++id, name',
+})
+
 const defaultDepartments = [
   { name: '领导', sortOrder: 1 },
   { name: '运行中心', sortOrder: 2 },
@@ -421,9 +440,63 @@ async function backfillMissingIntakeSignatures() {
   })
 }
 
+async function backfillMissingDeliveryIds() {
+  const records = await db.records.toArray()
+  const needsUpdate = records.filter(r => !r.deliveryId && (r.status === 'washed' || r.status === 'received' || r.status === 'distributed'))
+  if (needsUpdate.length === 0) return
+
+  // 昨天下午三点的统一编号
+  const yesterday = new Date()
+  yesterday.setDate(yesterday.getDate() - 1)
+  const y = yesterday.getFullYear()
+  const m = String(yesterday.getMonth() + 1).padStart(2, '0')
+  const d = String(yesterday.getDate()).padStart(2, '0')
+  const deliveryId = `SX${y}${m}${d}-1500`
+  const sentAt = `${y}-${m}-${d}`
+
+  await db.records.where('id').anyOf(needsUpdate.map(r => r.id)).modify(record => {
+    record.deliveryId = deliveryId
+    if (!record.sentAt) record.sentAt = sentAt
+  })
+}
+
+const defaultPriceTable = {
+  name: '香格里拉酒店价格表',
+  prices: {
+    '西服': 15, '西裤': 10, '领带': 4, '衬衫': 7, 'T恤': 8,
+    '羽绒服': 25, '防晒衣': 5, '床单': 4, '被罩': 4, '枕袋': 1,
+    '工作服夏裤': 10, '工作服冬裤': 10, '冲锋衣三合一羽绒款': 25,
+    '冲锋衣三合一抓绒款': 16, '白方台': 16, '方桌套': 10,
+    '单人BQ桌套（1.2m*0.9m）': 10, 'BQ桌套（1.8m*0.9m）': 12,
+    '单人IB桌套（1.2m*0.6m）': 10, 'IB桌套（1.8m*0.6m）': 12,
+    '白弹力椅套': 4, '小毛巾（0.32m*0.32m）': 1, '圆桌桌布': 13, '桌裙': 15,
+  },
+}
+
+async function ensurePriceTable() {
+  const existing = await db.priceTables.where('name').equals(defaultPriceTable.name).first()
+  if (!existing) {
+    await db.priceTables.add(defaultPriceTable)
+  }
+}
+
+async function backfillPriceTableId() {
+  const table = await db.priceTables.where('name').equals('香格里拉酒店价格表').first()
+  if (!table) return
+  const records = await db.records.toArray()
+  const needsUpdate = records.filter(r => !r.priceTableId)
+  if (needsUpdate.length === 0) return
+  await db.records.where('id').anyOf(needsUpdate.map(r => r.id)).modify(record => {
+    record.priceTableId = table.id
+  })
+}
+
 export async function runPostHydrateMigrations() {
   await normalizeItemTypes()
   await backfillMissingIntakeSignatures()
+  await backfillMissingDeliveryIds()
+  await ensurePriceTable()
+  await backfillPriceTableId()
 }
 
 export async function initDB() {
@@ -444,4 +517,5 @@ export async function initDB() {
   }
 
   await migrateRecordLifecycle()
+  await ensurePriceTable()
 }

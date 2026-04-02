@@ -7,6 +7,7 @@ import { showFailToast, showSuccessToast, showToast } from 'vant'
 import { db } from '../db/index.js'
 import { buildBatchCodeMap, getBatchDisplayLabel } from '../utils/batchDisplay.js'
 import { saveToDesktopStorage } from '../utils/desktopStorage.js'
+import { fireConfetti } from '../utils/confetti.js'
 import {
   computeBatchProgress,
   getStatusMeta,
@@ -36,6 +37,7 @@ const selectedStaffId = ref(null)
 const selectedItems = ref({})
 const itemNotes = ref({})
 const itemPhotos = ref({})
+const unlockedItems = ref({})
 const personalPieceDetails = ref({})
 const draftIntakeSignature = ref('')
 const draftIntakeSignedAt = ref('')
@@ -67,6 +69,43 @@ let distCtx = null
 const distNoSign = ref(false)
 const showPhotoViewer = ref(false)
 const viewerPhoto = ref('')
+const receivedTab = ref('batch')
+const sortingExpanded = ref({})
+const sortedItemIds = ref(new Set())
+const showSortingPersonPopup = ref(false)
+const sortingPersonDetail = ref(null)
+
+const pendingTab = ref('batch')
+const priceTables = ref([])
+const selectedPriceTableId = ref(null)
+const pendingSignIds = ref(new Set())
+const showPendingSignPopup = ref(false)
+const pendingSignCanvasRef = ref(null)
+const pendingSignHasStroke = ref(false)
+const pendingSignNoSign = ref(false)
+let pendingSignCtx = null
+
+const washedTab = ref('batch')
+const washedSortExpanded = ref({})
+const washedSignIds = ref(new Set())
+const showWashedSignPopup = ref(false)
+const washedSignCanvasRef = ref(null)
+const washedSignHasStroke = ref(false)
+const washedSignNoSign = ref(false)
+let washedSignCtx = null
+
+
+function drawSignWatermark(ctx, w, h) {
+  ctx.save()
+  ctx.shadowBlur = 0
+  ctx.shadowColor = 'transparent'
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.06)'
+  ctx.font = '28px "Microsoft YaHei UI", sans-serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText('签字区', w / 2, h / 2)
+  ctx.restore()
+}
 
 function openPhotoViewer(src) {
   viewerPhoto.value = src
@@ -87,6 +126,7 @@ const categoryLabels = {
 }
 
 const intakeDraftStorageKey = 'laundry-intake-draft-v1'
+const editorDraftStorageKey = 'laundry-editor-draft-v1'
 
 let signatureCtx = null
 let signatureDrawing = false
@@ -102,6 +142,11 @@ onBeforeUnmount(() => {
   stopCameraStream()
   window.removeEventListener('resize', updateViewportHeight)
 })
+
+watch(currentRecords, () => {
+  saveIntakeDraft()
+}, { deep: true })
+
 
 watch(showCameraPopup, value => {
   if (!value) {
@@ -124,11 +169,16 @@ async function refreshData() {
   itemTypes.value = await db.itemTypes.orderBy('sortOrder').toArray()
   batches.value = await db.batches.orderBy('sendDate').reverse().toArray()
   records.value = await db.records.toArray()
+  priceTables.value = await db.priceTables.toArray()
+  if (!selectedPriceTableId.value && priceTables.value.length > 0) {
+    selectedPriceTableId.value = priceTables.value[0].id
+  }
 }
 
 async function loadData() {
   await refreshData()
   restoreIntakeDraft()
+  restoreEditorDraft()
 }
 
 const itemTypeMap = computed(() => {
@@ -210,6 +260,82 @@ const groupedItemTypes = computed(() => {
     }))
 })
 
+const editorRecords = ref([])
+
+watch(editorRecords, () => {
+  try { window.localStorage.setItem('laundry-editor-draft-v1', JSON.stringify(editorRecords.value)) } catch {}
+}, { deep: true })
+
+const editorSummary = computed(() => {
+  return editorRecords.value.map((record, index) => {
+    const staff = staffList.value.find(s => s.id === record.staffId)
+    const dept = departments.value.find(d => d.id === record.departmentId)
+    const itemsText = record.items
+      .map(item => {
+        const type = itemTypes.value.find(t => t.id === item.itemTypeId)
+        const name = type?.name || ''
+        // Count how many records this person has for the same itemType
+        const sameTypeCount = record.items.filter(i => i.itemTypeId === item.itemTypeId).length
+        const piece = sameTypeCount > 1 && item.pieceNo ? `（第${item.pieceNo}件）` : ''
+        const qty = !item.pieceNo && item.quantity > 1 ? ` x${item.quantity}` : ''
+        return `${name}${piece}${qty}`
+      })
+      .join('；')
+    const totalQty = record.items.reduce((s, i) => s + i.quantity, 0)
+    return {
+      ...record,
+      index,
+      staffName: staff?.name || '',
+      deptName: dept?.name || '',
+      itemsText,
+      totalQty,
+      hasSignature: !!record.intakeSignature,
+      isNoSign: record.intakeSignature === 'NO_SIGNATURE',
+      intakeSignedLabel: record.intakeSignedAt ? new Date(record.intakeSignedAt).toLocaleString('zh-CN', {
+        month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+      }) : '',
+    }
+  })
+})
+
+function addAllToBatch() {
+  if (editorRecords.value.length === 0) {
+    showToast('编辑台没有记录')
+    return
+  }
+  currentRecords.value.push(...editorRecords.value)
+  editorRecords.value = []
+  showSuccessToast(`已全部加入本批次`)
+}
+
+function addOneToBatch(index) {
+  const record = editorRecords.value[index]
+  if (!record) return
+  currentRecords.value.push(record)
+  editorRecords.value.splice(index, 1)
+  showSuccessToast('已加入本批次')
+}
+
+function removeEditorRecord(index) {
+  editorRecords.value.splice(index, 1)
+}
+
+function toggleItemLock(itemId) {
+  unlockedItems.value[itemId] = !unlockedItems.value[itemId]
+}
+
+function clearEditor() {
+  selectedDeptId.value = null
+  selectedStaffId.value = null
+  selectedItems.value = {}
+  itemNotes.value = {}
+  unlockedItems.value = {}
+  itemPhotos.value = {}
+  personalPieceDetails.value = {}
+  draftIntakeSignature.value = ''
+  draftIntakeSignedAt.value = ''
+}
+
 const draftPeopleCount = computed(() => currentRecords.value.length)
 
 const draftItemCount = computed(() => {
@@ -231,12 +357,15 @@ const recordsSummary = computed(() => {
     const itemsText = record.items
       .map(item => {
         const type = itemTypes.value.find(t => t.id === item.itemTypeId)
-        const labels = []
-        if (item.photo) labels.push('有照片')
-        if (item.note) labels.push('有备注')
-        if (item.quantity === 1 && item.pieceNo) labels.unshift(`第${item.pieceNo}件`)
-        const suffix = labels.length > 0 ? `（${labels.join(' / ')}）` : ''
-        return `${type?.name || ''} x${item.quantity}${suffix}`
+        const name = type?.name || ''
+        const sameTypeCount = record.items.filter(i => i.itemTypeId === item.itemTypeId).length
+        const piece = sameTypeCount > 1 && item.pieceNo ? `（第${item.pieceNo}件）` : ''
+        const qty = !item.pieceNo && item.quantity > 1 ? ` x${item.quantity}` : ''
+        const extras = []
+        if (item.photo) extras.push('有照片')
+        if (item.note) extras.push('有备注')
+        const suffix = extras.length > 0 ? ` [${extras.join('/')}]` : ''
+        return `${name}${piece}${qty}${suffix}`
       })
       .join('；')
 
@@ -248,7 +377,7 @@ const recordsSummary = computed(() => {
       itemsText,
       photos: record.items.filter(item => item.photo).map(item => ({
         src: item.photo,
-        label: `${itemTypes.value.find(t => t.id === item.itemTypeId)?.name || ''}${item.pieceNo ? ` 第${item.pieceNo}件` : ''}`,
+        label: `${itemTypes.value.find(t => t.id === item.itemTypeId)?.name || ''}`,
       })),
       intakeSignature: record.intakeSignature || '',
       intakeSignedAt: record.intakeSignedAt || '',
@@ -283,7 +412,7 @@ const workflowMetrics = computed(() => [
     key: 'create',
     title: '接收建批',
     value: draftPeopleCount.value,
-    hint: draftPeopleCount.value ? `${draftItemCount.value} 件草稿` : '登记衣物',
+    hint: draftPeopleCount.value > 0 ? `${draftItemCount.value} 件草稿` : '登记衣物',
   },
   {
     key: 'pending',
@@ -308,6 +437,370 @@ const workflowMetrics = computed(() => [
 const pendingGroups = computed(() => buildStageGroups('pending'))
 const washedGroups = computed(() => buildStageGroups('washed'))
 const receivedGroups = computed(() => buildStageGroups('received'))
+
+const sortingGroups = computed(() => {
+  const typeMap = new Map()
+  receivedGroups.value.forEach(group => {
+    group.people.forEach(person => {
+      person.items.forEach(item => {
+        const key = item.itemName || '未知'
+        if (!typeMap.has(key)) typeMap.set(key, [])
+        typeMap.get(key).push({
+          ...item,
+          staffName: person.staffName,
+          deptName: person.deptName,
+        })
+      })
+    })
+  })
+  return Array.from(typeMap.entries())
+    .map(([typeName, items]) => ({
+      typeName,
+      count: items.length,
+      items: items.sort((a, b) => (a.staffName || '').localeCompare(b.staffName || '', 'zh-Hans-CN')),
+      allSorted: items.length > 0 && items.every(i => sortedItemIds.value.has(i.id)),
+    }))
+    .sort((a, b) => b.count - a.count)
+})
+
+function toggleSortingGroup(typeName) {
+  sortingExpanded.value[typeName] = !sortingExpanded.value[typeName]
+}
+
+function toggleSorted(itemId) {
+  const s = new Set(sortedItemIds.value)
+  if (s.has(itemId)) {
+    s.delete(itemId)
+  } else {
+    s.add(itemId)
+  }
+  sortedItemIds.value = s
+
+  // Check if any person just became fully sorted
+  sortingPersons.value.forEach(p => {
+    if (p.allSorted && p.items.some(i => i.id === itemId)) {
+      showSuccessToast(`${p.staffName} 布草已全部分拣`)
+    }
+  })
+}
+
+function resetSorting() {
+  sortedItemIds.value = new Set()
+  showSuccessToast('已重置分拣状态')
+}
+
+const sortingPersons = computed(() => {
+  const personMap = new Map()
+  receivedGroups.value.forEach(group => {
+    group.people.forEach(person => {
+      person.items.forEach(item => {
+        const key = item.staffId
+        if (!personMap.has(key)) {
+          personMap.set(key, { staffId: key, staffName: person.staffName, deptName: person.deptName, items: [] })
+        }
+        personMap.get(key).items.push({ ...item, staffName: person.staffName, deptName: person.deptName })
+      })
+    })
+  })
+  return Array.from(personMap.values())
+    .map(p => ({
+      ...p,
+      totalQty: p.items.length,
+      sortedQty: p.items.filter(i => sortedItemIds.value.has(i.id)).length,
+      allSorted: p.items.length > 0 && p.items.every(i => sortedItemIds.value.has(i.id)),
+    }))
+    .sort((a, b) => a.staffName.localeCompare(b.staffName, 'zh-Hans-CN'))
+})
+
+const pendingSignPersons = computed(() => {
+  return sortingPersons.value.filter(p => p.allSorted)
+})
+
+const pendingSignByDept = computed(() => {
+  const deptOrder = new Map(departments.value.map((d, i) => [d.name, i]))
+  const deptMap = new Map()
+  pendingSignPersons.value.forEach(p => {
+    const deptName = p.deptName || '未知部门'
+    if (!deptMap.has(deptName)) deptMap.set(deptName, [])
+    deptMap.get(deptName).push(p)
+  })
+  return Array.from(deptMap.entries())
+    .map(([deptName, persons]) => ({ deptName, persons }))
+    .sort((a, b) => (deptOrder.get(a.deptName) ?? 999) - (deptOrder.get(b.deptName) ?? 999))
+})
+
+function openSortingPerson(person) {
+  sortingPersonDetail.value = person
+  showSortingPersonPopup.value = true
+}
+
+function addPersonToSign(person) {
+  const s = new Set(sortedItemIds.value)
+  person.items.forEach(i => s.add(i.id))
+  sortedItemIds.value = s
+  showSortingPersonPopup.value = false
+  showSuccessToast(`${person.staffName} 已全部加入签字确认`)
+}
+
+// --- 待领取分拣 ---
+const washedSortGroups = computed(() => {
+  const staffMap = new Map(staffList.value.map(s => [s.id, s.name]))
+  const deptMap = new Map(departments.value.map(d => [d.id, d.name]))
+  const itemNameMap = new Map(itemTypes.value.map(t => [t.id, t.name]))
+  const typeMap = new Map()
+  records.value.forEach(r => {
+    if (r.status !== 'washed') return
+    const name = itemNameMap.get(r.itemTypeId) || '未知'
+    if (!typeMap.has(name)) typeMap.set(name, [])
+    typeMap.get(name).push({
+      ...r,
+      itemName: name,
+      staffName: staffMap.get(r.staffId) || '未知',
+      deptName: deptMap.get(r.departmentId) || '',
+    })
+  })
+  return Array.from(typeMap.entries())
+    .map(([typeName, items]) => ({
+      typeName,
+      count: items.length,
+      items: items.sort((a, b) => (a.staffName || '').localeCompare(b.staffName || '', 'zh-Hans-CN')),
+    }))
+    .sort((a, b) => b.count - a.count)
+})
+
+function toggleWashedSortGroup(typeName) {
+  washedSortExpanded.value[typeName] = !washedSortExpanded.value[typeName]
+}
+
+function toggleWashedSign(itemId) {
+  const s = new Set(washedSignIds.value)
+  if (s.has(itemId)) s.delete(itemId)
+  else s.add(itemId)
+  washedSignIds.value = s
+}
+
+const washedSignItems = computed(() => {
+  if (washedSignIds.value.size === 0) return []
+  const staffMap = new Map(staffList.value.map(s => [s.id, s.name]))
+  const deptMap = new Map(departments.value.map(d => [d.id, d.name]))
+  const itemNameMap = new Map(itemTypes.value.map(t => [t.id, t.name]))
+  return records.value
+    .filter(r => r.status === 'washed' && washedSignIds.value.has(r.id))
+    .map(r => ({
+      ...r,
+      itemName: itemNameMap.get(r.itemTypeId) || '未知',
+      staffName: staffMap.get(r.staffId) || '未知',
+      deptName: deptMap.get(r.departmentId) || '',
+    }))
+})
+
+function resetWashedSign() {
+  washedSignIds.value = new Set()
+}
+
+async function confirmWashedSign(signatureData) {
+  const ids = Array.from(washedSignIds.value)
+  if (ids.length === 0) return
+
+  const today = getToday()
+  const now = new Date().toISOString()
+  const n = new Date()
+  const hhmmss = String(n.getHours()).padStart(2, '0') + String(n.getMinutes()).padStart(2, '0') + String(n.getSeconds()).padStart(2, '0')
+  const pickupId = `LQ${today.replace(/-/g, '')}-${hhmmss}`
+  const recordList = await db.records.where('id').anyOf(ids).toArray()
+  const batchIds = Array.from(new Set(recordList.map(r => r.batchId)))
+
+  await db.transaction('rw', db.records, db.batches, async () => {
+    await db.records.where('id').anyOf(ids).modify(record => {
+      record.status = 'received'
+      record.receivedAt = today
+      record.pickupId = pickupId
+      record.pickupSignature = signatureData
+      record.pickupSignedAt = now
+      if (!record.sentAt) record.sentAt = today
+    })
+    await db.batches.where('id').anyOf(batchIds).modify(batch => {
+      batch.updatedAt = now
+    })
+  })
+
+  washedSignIds.value = new Set()
+  showWashedSignPopup.value = false
+  await persistSnapshot('', '已更新')
+  await loadData()
+}
+
+function addWashedSelectedToSign() {
+  const ids = selectedWashedIds.value
+  if (ids.length === 0) {
+    showToast('请先勾选布草')
+    return
+  }
+  const s = new Set(washedSignIds.value)
+  ids.forEach(id => s.add(id))
+  washedSignIds.value = s
+  selectedWashedIds.value = []
+  showSuccessToast(`已加入签字确认 (${ids.length})`)
+}
+
+function openWashedSignPopup() {
+  if (washedSignIds.value.size === 0) {
+    showToast('请先在分拣模式或批次情况中选择布草')
+    return
+  }
+  washedSignNoSign.value = false
+  washedSignHasStroke.value = false
+  showWashedSignPopup.value = true
+}
+
+function onWashedSignOpen() {
+  nextTick(() => {
+    const canvas = washedSignCanvasRef.value
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    const ratio = window.devicePixelRatio || 1
+    canvas.width = Math.max(1, Math.floor(rect.width * ratio))
+    canvas.height = Math.max(1, Math.floor(rect.height * ratio))
+    washedSignCtx = canvas.getContext('2d')
+    if (!washedSignCtx) return
+    washedSignCtx.scale(ratio, ratio)
+    washedSignCtx.lineCap = 'round'
+    washedSignCtx.lineJoin = 'round'
+    washedSignCtx.lineWidth = 2.6
+    washedSignCtx.strokeStyle = '#edf2f7'
+    washedSignCtx.fillStyle = 'rgba(18, 26, 35, 1)'
+    washedSignCtx.fillRect(0, 0, rect.width, rect.height)
+    drawSignWatermark(washedSignCtx, rect.width, rect.height)
+    washedSignHasStroke.value = false
+  })
+}
+
+function startWashedSign(e) {
+  if (!washedSignCtx) return
+  e.preventDefault()
+  const rect = washedSignCanvasRef.value.getBoundingClientRect()
+  washedSignCtx.beginPath()
+  const x = e.clientX - rect.left, y = e.clientY - rect.top
+  washedSignCtx.moveTo(x, y)
+  washedSignCanvasRef.value.setPointerCapture(e.pointerId)
+}
+
+function moveWashedSign(e) {
+  if (!washedSignCtx || e.buttons === 0) return
+  e.preventDefault()
+  const rect = washedSignCanvasRef.value.getBoundingClientRect()
+  const x = e.clientX - rect.left, y = e.clientY - rect.top
+  washedSignCtx.lineTo(x, y)
+  washedSignCtx.stroke()
+  washedSignHasStroke.value = true
+}
+
+function endWashedSign() { if (washedSignCtx) { washedSignCtx.closePath() } }
+
+function confirmWashedSignAction() {
+  if (!washedSignHasStroke.value && !washedSignNoSign.value) {
+    showToast('请先签字或选择无签字')
+    return
+  }
+  const sig = washedSignNoSign.value ? 'NO_SIGNATURE' : washedSignCanvasRef.value.toDataURL('image/png')
+  fireConfetti()
+  confirmWashedSign(sig)
+}
+
+// --- 待送洗签字确认 ---
+const pendingSignItems = computed(() => {
+  if (pendingSignIds.value.size === 0) return []
+  const staffMap = new Map(staffList.value.map(s => [s.id, s.name]))
+  const deptMap = new Map(departments.value.map(d => [d.id, d.name]))
+  const itemNameMap = new Map(itemTypes.value.map(t => [t.id, t.name]))
+  return records.value
+    .filter(r => r.status === 'pending' && pendingSignIds.value.has(r.id))
+    .map(r => ({
+      ...r,
+      itemName: itemNameMap.get(r.itemTypeId) || '未知',
+      staffName: staffMap.get(r.staffId) || '未知',
+      deptName: deptMap.get(r.departmentId) || '',
+    }))
+})
+
+function addPendingSelectedToSign() {
+  const ids = selectedPendingIds.value
+  if (ids.length === 0) { showToast('请先勾选布草'); return }
+  const s = new Set(pendingSignIds.value)
+  ids.forEach(id => s.add(id))
+  pendingSignIds.value = s
+  selectedPendingIds.value = []
+  showSuccessToast(`已加入签字确认 (${ids.length})`)
+}
+
+function resetPendingSign() { pendingSignIds.value = new Set() }
+
+function openPendingSignPopup() {
+  if (pendingSignIds.value.size === 0) { showToast('请先选择布草'); return }
+  pendingSignNoSign.value = false
+  pendingSignHasStroke.value = false
+  showPendingSignPopup.value = true
+}
+
+function onPendingSignOpen() {
+  nextTick(() => {
+    const canvas = pendingSignCanvasRef.value
+    if (!canvas) return
+    const rect = canvas.getBoundingClientRect()
+    const ratio = window.devicePixelRatio || 1
+    canvas.width = Math.max(1, Math.floor(rect.width * ratio))
+    canvas.height = Math.max(1, Math.floor(rect.height * ratio))
+    pendingSignCtx = canvas.getContext('2d')
+    if (!pendingSignCtx) return
+    pendingSignCtx.scale(ratio, ratio)
+    pendingSignCtx.lineCap = 'round'
+    pendingSignCtx.lineJoin = 'round'
+    pendingSignCtx.lineWidth = 2.6
+    pendingSignCtx.strokeStyle = '#edf2f7'
+    pendingSignCtx.fillStyle = 'rgba(18, 26, 35, 1)'
+    pendingSignCtx.fillRect(0, 0, rect.width, rect.height)
+    drawSignWatermark(pendingSignCtx, rect.width, rect.height)
+    pendingSignHasStroke.value = false
+  })
+}
+
+function startPendingSign(e) { if (!pendingSignCtx) return; e.preventDefault(); const r = pendingSignCanvasRef.value.getBoundingClientRect(); const x = e.clientX - r.left, y = e.clientY - r.top; pendingSignCtx.beginPath(); pendingSignCtx.moveTo(x, y); pendingSignCanvasRef.value.setPointerCapture(e.pointerId) }
+function movePendingSign(e) { if (!pendingSignCtx || e.buttons === 0) return; e.preventDefault(); const r = pendingSignCanvasRef.value.getBoundingClientRect(); const x = e.clientX - r.left, y = e.clientY - r.top; pendingSignCtx.lineTo(x, y); pendingSignCtx.stroke(); pendingSignHasStroke.value = true }
+function endPendingSign() { if (pendingSignCtx) { pendingSignCtx.closePath() } }
+
+async function confirmPendingSignAction() {
+  if (!pendingSignHasStroke.value && !pendingSignNoSign.value) { showToast('请先签字或选择无签字'); return }
+  const sig = pendingSignNoSign.value ? 'NO_SIGNATURE' : pendingSignCanvasRef.value.toDataURL('image/png')
+  const ids = Array.from(pendingSignIds.value)
+  if (ids.length === 0) return
+
+  const today = getToday()
+  const now = new Date().toISOString()
+  const n = new Date()
+  const hhmmss = String(n.getHours()).padStart(2, '0') + String(n.getMinutes()).padStart(2, '0') + String(n.getSeconds()).padStart(2, '0')
+  const deliveryId = generateTimestampId('SX')
+  const recordList = await db.records.where('id').anyOf(ids).toArray()
+  const batchIds = Array.from(new Set(recordList.map(r => r.batchId)))
+
+  await db.transaction('rw', db.records, db.batches, async () => {
+    await db.records.where('id').anyOf(ids).modify(record => {
+      record.status = 'washed'
+      record.sentAt = today
+      record.deliveryId = deliveryId
+      record.deliverySignature = sig
+      record.deliverySignedAt = now
+      if (selectedPriceTableId.value) record.priceTableId = selectedPriceTableId.value
+    })
+    await db.batches.where('id').anyOf(batchIds).modify(batch => { batch.updatedAt = now })
+  })
+
+  pendingSignIds.value = new Set()
+  showPendingSignPopup.value = false
+  fireConfetti()
+  await persistSnapshot('', '已更新')
+  await loadData()
+}
+
 const batchCodeMap = computed(() => buildBatchCodeMap(batches.value))
 const canSubmitDraft = computed(() => currentRecords.value.length > 0)
 const navDensityClass = computed(() => {
@@ -332,7 +825,8 @@ function buildStageGroups(status) {
   return batches.value
     .map(batch => {
       const allRecords = batchRecordMap.get(batch.id) || []
-      const stageRecords = allRecords.filter(record => record.status === status)
+      const signExclude = status === 'pending' ? pendingSignIds.value : (status === 'washed' ? washedSignIds.value : null)
+      const stageRecords = allRecords.filter(record => record.status === status && (!signExclude || !signExclude.has(record.id)))
       if (stageRecords.length === 0) return null
 
       const peopleMap = new Map()
@@ -393,7 +887,12 @@ function buildStageGroups(status) {
       }
     })
     .filter(Boolean)
-    .sort((left, right) => right.batchDate.localeCompare(left.batchDate))
+    .sort((left, right) => {
+      if (status === 'washed') {
+        return left.batchDate.localeCompare(right.batchDate)
+      }
+      return right.batchDate.localeCompare(left.batchDate)
+    })
 }
 
 const datePickerModel = computed({
@@ -435,7 +934,21 @@ function saveIntakeDraft() {
 
   window.localStorage.setItem(intakeDraftStorageKey, JSON.stringify(payload))
   draftSavedAt.value = payload.savedAt
-  showSuccessToast('接收草稿已保存')
+}
+
+function saveEditorDraft() {
+  window.localStorage.setItem(editorDraftStorageKey, JSON.stringify(editorRecords.value))
+}
+
+function restoreEditorDraft() {
+  try {
+    const raw = window.localStorage.getItem(editorDraftStorageKey)
+    if (!raw) return
+    const data = JSON.parse(raw)
+    if (Array.isArray(data) && data.length > 0) {
+      editorRecords.value = data
+    }
+  } catch {}
 }
 
 function clearIntakeDraftStorage() {
@@ -456,14 +969,7 @@ function formatDraftSavedAt(value) {
 }
 
 function openAddForm() {
-  selectedDeptId.value = null
-  selectedStaffId.value = null
-  selectedItems.value = {}
-  itemNotes.value = {}
-  itemPhotos.value = {}
-  personalPieceDetails.value = {}
-  draftIntakeSignature.value = ''
-  draftIntakeSignedAt.value = ''
+  clearEditor()
   showAddForm.value = true
 }
 
@@ -740,7 +1246,7 @@ function openDistributionSlip(group, person) {
     items: person.items,
     target: {
       ids,
-      batchId: group.batchId,
+      batchId: group?.batchId || '',
       staffName: person.staffName,
     },
   }
@@ -778,6 +1284,7 @@ function initializeSignatureCanvas() {
   signatureCtx.strokeStyle = '#edf2f7'
   signatureCtx.fillStyle = 'rgba(18, 26, 35, 1)'
   signatureCtx.fillRect(0, 0, rect.width, rect.height)
+  drawSignWatermark(signatureCtx, rect.width, rect.height)
   signatureHasStroke.value = false
 }
 
@@ -830,12 +1337,13 @@ async function confirmSignature() {
     draftIntakeSignature.value = signatureData
     draftIntakeSignedAt.value = new Date().toISOString()
     showSignaturePopup.value = false
-    showSuccessToast('接收签字已保存')
+    fireConfetti()
     return
   }
 
   await applyDistributionSignature(signatureData)
   showSignaturePopup.value = false
+  fireConfetti()
   showSlipPopup.value = false
   slipRecord.value = null
 }
@@ -849,12 +1357,18 @@ async function applyDistributionSignature(signatureData) {
   const ids = target.ids
   const batchIds = Array.from(new Set(records.value.filter(item => ids.includes(item.id)).map(item => item.batchId)))
 
+  const n = new Date()
+  const hhmmss = String(n.getHours()).padStart(2, '0') + String(n.getMinutes()).padStart(2, '0') + String(n.getSeconds()).padStart(2, '0')
+  const staffName = target.staffName || ''
+  const distributionId = `FF${today.replace(/-/g, '')}-${hhmmss}-${staffName}`
+
   await db.transaction('rw', db.records, db.batches, async () => {
     await db.records.where('id').anyOf(ids).modify(record => {
       record.status = 'distributed'
       record.distributedAt = today
       record.distributionSignature = signatureData
       record.distributionSignedAt = now
+      record.distributionId = distributionId
       if (!record.sentAt) record.sentAt = today
       if (!record.receivedAt) record.receivedAt = today
     })
@@ -865,7 +1379,7 @@ async function applyDistributionSignature(signatureData) {
   })
 
   selectedReceivedIds.value = selectedReceivedIds.value.filter(id => !ids.includes(id))
-  await persistSnapshot('已签字并完成发放', '发放已更新到当前页面缓存')
+  await persistSnapshot('', '发放已更新到当前页面缓存')
   await loadData()
 }
 
@@ -949,6 +1463,7 @@ function initIntakeCanvas() {
   intakeCtx.strokeStyle = '#edf2f7'
   intakeCtx.fillStyle = 'rgba(18, 26, 35, 1)'
   intakeCtx.fillRect(0, 0, rect.width, rect.height)
+  drawSignWatermark(intakeCtx, rect.width, rect.height)
   intakeHasStroke.value = false
 }
 
@@ -958,7 +1473,8 @@ function startIntakeSignature(event) {
   const canvas = intakeCanvasRef.value
   const rect = canvas.getBoundingClientRect()
   intakeCtx.beginPath()
-  intakeCtx.moveTo(event.clientX - rect.left, event.clientY - rect.top)
+  const x = event.clientX - rect.left, y = event.clientY - rect.top
+  intakeCtx.moveTo(x, y)
   canvas.setPointerCapture(event.pointerId)
 }
 
@@ -966,12 +1482,13 @@ function moveIntakeSignature(event) {
   if (!intakeCtx || event.buttons === 0) return
   event.preventDefault()
   const rect = intakeCanvasRef.value.getBoundingClientRect()
-  intakeCtx.lineTo(event.clientX - rect.left, event.clientY - rect.top)
+  const x = event.clientX - rect.left, y = event.clientY - rect.top
+  intakeCtx.lineTo(x, y)
   intakeCtx.stroke()
   intakeHasStroke.value = true
 }
 
-function endIntakeSignature(event) {
+function endIntakeSignature() {
   if (!intakeCtx) return
   intakeCtx.closePath()
 }
@@ -981,6 +1498,7 @@ function clearIntakeCanvas() {
   const canvas = intakeCanvasRef.value
   const rect = canvas.getBoundingClientRect()
   intakeCtx.fillRect(0, 0, rect.width, rect.height)
+  drawSignWatermark(intakeCtx, rect.width, rect.height)
   intakeHasStroke.value = false
 }
 
@@ -1000,6 +1518,7 @@ function initDistCanvas() {
   distCtx.strokeStyle = '#edf2f7'
   distCtx.fillStyle = 'rgba(18, 26, 35, 1)'
   distCtx.fillRect(0, 0, rect.width, rect.height)
+  drawSignWatermark(distCtx, rect.width, rect.height)
   distHasStroke.value = false
 }
 
@@ -1009,7 +1528,8 @@ function startDistSignature(event) {
   const canvas = distCanvasRef.value
   const rect = canvas.getBoundingClientRect()
   distCtx.beginPath()
-  distCtx.moveTo(event.clientX - rect.left, event.clientY - rect.top)
+  const x = event.clientX - rect.left, y = event.clientY - rect.top
+  distCtx.moveTo(x, y)
   canvas.setPointerCapture(event.pointerId)
 }
 
@@ -1017,7 +1537,8 @@ function moveDistSignature(event) {
   if (!distCtx || event.buttons === 0) return
   event.preventDefault()
   const rect = distCanvasRef.value.getBoundingClientRect()
-  distCtx.lineTo(event.clientX - rect.left, event.clientY - rect.top)
+  const x = event.clientX - rect.left, y = event.clientY - rect.top
+  distCtx.lineTo(x, y)
   distCtx.stroke()
   distHasStroke.value = true
 }
@@ -1032,6 +1553,7 @@ function clearDistCanvas() {
   const canvas = distCanvasRef.value
   const rect = canvas.getBoundingClientRect()
   distCtx.fillRect(0, 0, rect.width, rect.height)
+  drawSignWatermark(distCtx, rect.width, rect.height)
   distHasStroke.value = false
 }
 
@@ -1051,9 +1573,17 @@ async function confirmDistribution() {
     return
   }
   const signatureData = distNoSign.value ? 'NO_SIGNATURE' : distCanvasRef.value.toDataURL('image/png')
+  const distributedIds = slipRecord.value?.target?.ids || []
   await applyDistributionSignature(signatureData)
+  // Remove distributed items from sorting state
+  if (distributedIds.length > 0) {
+    const s = new Set(sortedItemIds.value)
+    distributedIds.forEach(id => s.delete(id))
+    sortedItemIds.value = s
+  }
   showSlipPopup.value = false
   slipRecord.value = null
+  fireConfetti()
 }
 
 function onSlipPopupOpen() {
@@ -1078,27 +1608,13 @@ function resetIntakeToCanvas() {
   })
 }
 
-function confirmAndAddRecord() {
+function confirmIntakeSlip() {
   if (!intakeHasStroke.value && !intakeNoSign.value) {
     showToast('请先签字或选择无签字')
     return
   }
-  if (intakeNoSign.value) {
-    draftIntakeSignature.value = 'NO_SIGNATURE'
-    draftIntakeSignedAt.value = new Date().toISOString()
-  } else {
-    const canvas = intakeCanvasRef.value
-    draftIntakeSignature.value = canvas.toDataURL('image/png')
-    draftIntakeSignedAt.value = new Date().toISOString()
-  }
-  addRecord()
-}
-
-function addRecord() {
-  if (!draftIntakeSignature.value && !intakeNoSign.value) {
-    showToast('请先在面单上签字')
-    return
-  }
+  const signatureData = intakeNoSign.value ? 'NO_SIGNATURE' : intakeCanvasRef.value.toDataURL('image/png')
+  const signedAt = new Date().toISOString()
 
   const items = slipRecord.value?.items?.map(item => ({
     itemTypeId: item.itemTypeId,
@@ -1108,23 +1624,19 @@ function addRecord() {
     pieceNo: item.pieceNo || null,
   })) || []
 
-  if (items.length === 0) {
-    showToast('请先生成面单')
-    return
-  }
-
   currentRecords.value.push({
     departmentId: selectedDeptId.value,
     staffId: selectedStaffId.value,
-    intakeSignature: draftIntakeSignature.value,
-    intakeSignedAt: draftIntakeSignedAt.value || new Date().toISOString(),
+    intakeSignature: signatureData,
+    intakeSignedAt: signedAt,
     items,
   })
 
-  showAddForm.value = false
   showSlipPopup.value = false
+  showAddForm.value = false
   slipRecord.value = null
-  showSuccessToast('已加入当前批次草稿')
+  clearEditor()
+  fireConfetti()
 }
 
 function removeRecord(index) {
@@ -1134,7 +1646,7 @@ function removeRecord(index) {
 async function persistSnapshot(successMessage, fallbackMessage) {
   const result = await saveToDesktopStorage()
   if (result.success) {
-    showSuccessToast(successMessage)
+    if (successMessage) showSuccessToast(successMessage)
     return true
   }
 
@@ -1201,6 +1713,13 @@ async function submitBatch() {
   scrollToSection('pending')
 }
 
+function generateTimestampId(prefix) {
+  const d = new Date()
+  const date = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`
+  const time = `${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}${String(d.getSeconds()).padStart(2, '0')}`
+  return `${prefix}${date}-${time}`
+}
+
 async function advanceRecords(sourceStatus, ids) {
   if (ids.length === 0) {
     showToast('请先勾选要处理的衣物')
@@ -1212,16 +1731,21 @@ async function advanceRecords(sourceStatus, ids) {
   const recordList = await db.records.where('id').anyOf(ids).toArray()
   const batchIds = Array.from(new Set(recordList.map(item => item.batchId)))
 
+  const deliveryId = sourceStatus === 'pending' ? generateTimestampId('SX') : null
+  const pickupId = sourceStatus === 'washed' ? generateTimestampId('LQ') : null
+
   await db.transaction('rw', db.records, db.batches, async () => {
     await db.records.where('id').anyOf(ids).modify(record => {
       if (sourceStatus === 'pending') {
         record.status = 'washed'
         record.sentAt = today
+        record.deliveryId = deliveryId
       }
 
       if (sourceStatus === 'washed') {
         record.status = 'received'
         record.receivedAt = today
+        record.pickupId = pickupId
         if (!record.sentAt) record.sentAt = today
       }
 
@@ -1240,9 +1764,13 @@ async function advanceRecords(sourceStatus, ids) {
   await loadData()
 }
 
-function goBatchDetail(batchId) {
+function goBatchDetail(batchId, staffId) {
   sessionStorage.setItem('send-active-section', activeSection.value)
-  router.push(`/batch/${batchId}`)
+  if (staffId) {
+    router.push(`/batch/${batchId}?staff=${staffId}`)
+  } else {
+    router.push(`/batch/${batchId}`)
+  }
 }
 
 function toggleSelection(listRef, id) {
@@ -1343,11 +1871,16 @@ function isAllStageSelected(status) {
 }
 
 function openDraftDetail(record) {
+  const itemTypeCounts = {}
+  record.items.forEach(item => {
+    itemTypeCounts[item.itemTypeId] = (itemTypeCounts[item.itemTypeId] || 0) + 1
+  })
   selectedDraftRecord.value = {
     ...record,
     enrichedItems: record.items.map(item => ({
       ...item,
       itemName: itemTypes.value.find(t => t.id === item.itemTypeId)?.name || '未知',
+      showPieceNo: itemTypeCounts[item.itemTypeId] > 1 && !!item.pieceNo,
     })),
   }
   showDraftDetailPopup.value = true
@@ -1389,15 +1922,14 @@ function getStageGroups(status) {
   return receivedGroups.value
 }
 
-function getStageDateLabel(status, item) {
-  if (status === 'pending') return ''
-  if (status === 'washed') return `送洗日期：${item.sentAt || '未记录'}`
-  return `领取日期：${item.receivedAt || '未记录'}`
+function getStageDateLabel() {
+  return ''
 }
 
 function getRecordDisplayTitle(item) {
-  const pieceText = item.showPieceNo ? ` · 第${item.pieceNo}件` : ''
-  return `${item.itemName}${pieceText}`
+  const pieceText = item.showPieceNo ? `（第${item.pieceNo}件）` : ''
+  const qtyText = !item.pieceNo && item.quantity > 1 ? ` x${item.quantity}` : ''
+  return `${item.itemName}${pieceText}${qtyText}`
 }
 
 function buildStageLedgerText(status) {
@@ -1445,12 +1977,13 @@ function buildStageLedgerText(status) {
     group.people.forEach(person => {
       lines.push(`${person.deptName}｜${person.staffName}`)
       person.items.forEach(item => {
+        const piece = item.showPieceNo ? `（第${item.pieceNo}件）` : ''
+        const qty = !item.pieceNo && item.quantity > 1 ? ` x${item.quantity}` : ''
         const extras = []
-        if (item.pieceNo) extras.push(`第${item.pieceNo}件`)
         if (item.note) extras.push(`备注：${item.note}`)
         if (item.photo) extras.push('有照片')
-        const suffix = extras.length > 0 ? `（${extras.join('，')}）` : ''
-        lines.push(`- ${item.itemName} x${item.quantity}${suffix}`)
+        const suffix = extras.length > 0 ? ` [${extras.join('，')}]` : ''
+        lines.push(`- ${item.itemName}${piece}${qty}${suffix}`)
       })
     })
 
@@ -1526,72 +2059,44 @@ function scrollToSection(key) {
       <div class="workflow-main">
         <div class="section-stack">
           <section v-show="activeSection === 'create'" id="section-create" class="planner-shell">
-            <div class="section-heading">
+            <div class="create-block__header">
               <div>
-                <h3 class="section-heading__title">接收建批</h3>
+                <h3 class="create-block__title">接收建批
+                  <span v-if="draftPeopleCount" class="create-block__count">{{ draftPeopleCount }} 人 / {{ draftItemCount }} 件</span>
+                </h3>
+              </div>
+              <div class="create-block__toolbar">
+                <button type="button" class="create-block__chip" @click="showDatePicker = true">{{ receivedDate }}</button>
+                <button type="button" class="create-block__chip" @click="openNoteEditor">{{ batchNote || '备注' }}</button>
+                <van-button type="primary" round size="small" icon="plus" @click="openAddForm">选人录入</van-button>
               </div>
             </div>
 
-            <article class="planner-card planner-card--full">
-              <div class="intake-bar">
-                <button type="button" class="intake-bar__cell" @click="showDatePicker = true">
-                  <span>日期</span>
-                  <strong>{{ receivedDate }}</strong>
-                </button>
-                <div class="intake-bar__cell">
-                  <span>人 / 件</span>
-                  <strong>{{ draftPeopleCount }} / {{ draftItemCount }}</strong>
+            <div v-if="recordsSummary.length > 0" class="create-block__list">
+              <article
+                v-for="(record, index) in recordsSummary"
+                :key="`${record.staffId}-${index}`"
+                class="person-row"
+                @click="openDraftDetail(record)"
+              >
+                <div class="person-row__body">
+                  <div class="person-row__name">{{ record.staffName }}</div>
+                  <div class="person-row__detail">{{ record.items.reduce((s, i) => s + i.quantity, 0) }} 件 · {{ record.intakeSignature === 'NO_SIGNATURE' ? '无签字' : (record.intakeSignature ? '已签字' : '无签字') }}</div>
                 </div>
-                <button type="button" class="intake-bar__cell" @click="openNoteEditor">
-                  <span>备注</span>
-                  <strong :class="{ 'intake-bar__placeholder': !batchNote }">{{ batchNote || '添加' }}</strong>
-                </button>
-                <div class="intake-bar__actions">
-                  <van-button type="primary" round size="small" @click="openAddForm">添加衣物</van-button>
-                  <van-button plain type="primary" round size="small" @click="saveIntakeDraft">保存草稿</van-button>
-                  <van-button
-                    round
-                    size="small"
-                    :type="canSubmitDraft ? 'primary' : 'default'"
-                    :plain="!canSubmitDraft"
-                    :disabled="!canSubmitDraft"
-                    :loading="saving"
-                    @click="submitBatch"
-                  >提交批次</van-button>
-                </div>
-              </div>
+                <button type="button" class="person-row__link person-row__link--danger" @click.stop="removeRecord(record.rawIndex)">移除</button>
+              </article>
+            </div>
+            <div v-else class="create-block__empty">点击"选人录入"开始接收衣物</div>
 
-              <div v-if="draftSavedAt" class="planner-draft-meta">最近保存：{{ formatDraftSavedAt(draftSavedAt) }}</div>
-
-              <div class="draft-preview-head">
-                <strong>草稿明细</strong>
-                <span>{{ recordsSummary.length ? `已加入 ${recordsSummary.length} 人` : '暂时还没有人员衣物' }}</span>
-              </div>
-
-              <div v-if="recordsSummary.length > 0" class="draft-preview-list">
-                <article
-                  v-for="(record, index) in recordsSummary"
-                  :key="`${record.staffId}-${index}`"
-                  class="draft-preview-item"
-                  @click="openDraftDetail(record)"
-                >
-                  <div class="draft-preview-item__head">
-                    <div>
-                      <strong>{{ record.staffName }}</strong>
-                      <span>{{ record.deptName }}</span>
-                    </div>
-                    <van-button plain size="small" type="danger" round @click.stop="removeRecord(record.rawIndex)">移除</van-button>
-                  </div>
-                  <div class="draft-preview-item__meta">{{ record.itemsText }}</div>
-                  <div v-if="record.photos.length" class="draft-preview-item__photos">
-                    <img v-for="photo in record.photos" :key="photo.src" :src="photo.src" :alt="photo.label" class="draft-preview-item__photo zoomable-photo" @click.stop="openPhotoViewer(photo.src)" />
-                  </div>
-                  <div v-if="record.intakeSignature === 'NO_SIGNATURE'" class="draft-preview-item__signature draft-preview-item__signature--none">无签字 · {{ record.intakeSignedLabel }}</div>
-                  <div v-else-if="record.intakeSignature" class="draft-preview-item__signature">面单已签字 · {{ record.intakeSignedLabel }}</div>
-                </article>
-              </div>
-              <van-empty v-else description="草稿里还没有人员衣物" />
-            </article>
+            <div v-if="recordsSummary.length > 0" class="create-block__footer">
+              <van-button
+                plain
+                round
+                size="small"
+                :loading="saving"
+                @click="submitBatch"
+              >提交待送洗</van-button>
+            </div>
           </section>
 
           <section
@@ -1607,29 +2112,206 @@ function scrollToSection(key) {
                 {{ getStageTitle(stage) }}
                 <span class="section-heading__count">{{ getStageGroups(stage).reduce((s, g) => s + g.totalCount, 0) }} 件</span>
               </h3>
+              <div v-if="stage === 'pending' && (getStageGroups(stage).length > 0 || pendingSignIds.size > 0)" class="section-heading__toggle">
+                <button type="button" class="toggle-chip" :class="{ 'is-active': pendingTab === 'batch' }" @click="pendingTab = 'batch'">批次情况</button>
+                <button type="button" class="toggle-chip" :class="{ 'is-active': pendingTab === 'sign' }" @click="pendingTab = 'sign'">签字确认<span v-if="pendingSignIds.size > 0"> ({{ pendingSignIds.size }})</span></button>
+              </div>
+              <div v-if="stage === 'washed' && (getStageGroups(stage).length > 0 || washedSignIds.size > 0)" class="section-heading__toggle">
+                <button type="button" class="toggle-chip" :class="{ 'is-active': washedTab === 'batch' }" @click="washedTab = 'batch'">批次情况</button>
+                <button type="button" class="toggle-chip" :class="{ 'is-active': washedTab === 'sort' }" @click="washedTab = 'sort'">分拣模式</button>
+                <button type="button" class="toggle-chip" :class="{ 'is-active': washedTab === 'sign' }" @click="washedTab = 'sign'">签字确认<span v-if="washedSignIds.size > 0"> ({{ washedSignIds.size }})</span></button>
+              </div>
+              <div v-if="stage === 'received' && getStageGroups(stage).length > 0" class="section-heading__toggle">
+                <button type="button" class="toggle-chip" :class="{ 'is-active': receivedTab === 'batch' }" @click="receivedTab = 'batch'">批次情况</button>
+                <button type="button" class="toggle-chip" :class="{ 'is-active': receivedTab === 'sort' }" @click="receivedTab = 'sort'">分拣模式</button>
+                <button type="button" class="toggle-chip" :class="{ 'is-active': receivedTab === 'sign' }" @click="receivedTab = 'sign'">签字确认</button>
+              </div>
             </div>
 
+            <!-- 待送洗签字确认视图 -->
+            <div v-if="stage === 'pending' && pendingTab === 'sign'">
+              <div v-if="pendingSignItems.length > 0" class="sign-confirm-view">
+                <div class="sign-confirm-view__decor"></div>
+                <div class="sign-confirm-view__header">
+                  <div class="sign-confirm-view__count">{{ pendingSignItems.length }}</div>
+                  <div class="sign-confirm-view__label">种类型布草待送洗确认</div>
+                </div>
+                <div v-if="priceTables.length > 0" class="sign-confirm-view__price-select">
+                  <span class="sign-confirm-view__price-label">价格表</span>
+                  <select v-model="selectedPriceTableId" class="sign-confirm-view__select">
+                    <option v-for="pt in priceTables" :key="pt.id" :value="pt.id">{{ pt.name }}</option>
+                  </select>
+                </div>
+                <div class="sign-confirm-view__list">
+                  <div v-for="(item, i) in pendingSignItems" :key="i" class="sign-confirm-view__item">
+                    <span class="sign-confirm-view__item-name">{{ item.itemName }}{{ item.quantity > 1 ? ` x${item.quantity}` : '' }}</span>
+                    <span class="sign-confirm-view__item-person">{{ item.staffName }}</span>
+                  </div>
+                </div>
+                <div class="sign-confirm-view__actions">
+                  <button type="button" class="sign-confirm-view__clear" @click="resetPendingSign">清空列表</button>
+                  <van-button type="primary" round @click="openPendingSignPopup">签字确认送洗</van-button>
+                </div>
+              </div>
+              <div v-else class="sign-confirm-view sign-confirm-view--empty">
+                <div class="sign-confirm-view__decor"></div>
+                <div class="sign-confirm-view__empty-text">在批次情况中选择布草后<br>此处显示待确认列表</div>
+              </div>
+            </div>
+
+            <!-- 待领取分拣视图 -->
+            <div v-if="stage === 'washed' && washedTab === 'sort' && washedSortGroups.length > 0" class="sorting-view">
+              <div class="sorting-list">
+                <div v-for="group in washedSortGroups" :key="group.typeName" class="sorting-group">
+                  <button type="button" class="sorting-group__head" @click="toggleWashedSortGroup(group.typeName)">
+                    <span class="sorting-group__name">{{ group.typeName }}</span>
+                    <span class="sorting-group__count">{{ group.count }} 件</span>
+                    <van-icon :name="washedSortExpanded[group.typeName] ? 'arrow-up' : 'arrow-down'" size="14" class="sorting-group__arrow" />
+                  </button>
+                  <div v-if="washedSortExpanded[group.typeName]" class="sorting-group__body">
+                    <div
+                      v-for="(item, idx) in group.items"
+                      :key="idx"
+                      class="sorting-item"
+                      :class="{ 'is-sorted': washedSignIds.has(item.id) }"
+                      @click="toggleWashedSign(item.id)"
+                    >
+                      <img v-if="item.photo" :src="item.photo" class="sorting-item__photo zoomable-photo" @click.stop="openPhotoViewer(item.photo)" />
+                      <div v-else class="sorting-item__no-photo"><van-icon name="photo-o" size="20" /></div>
+                      <div class="sorting-item__info">
+                        <div class="sorting-item__name">{{ getRecordDisplayTitle(item) }}</div>
+                      </div>
+                      <div class="sorting-item__person">
+                        <strong>{{ item.staffName }}</strong>
+                        <span>{{ item.deptName }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 待领取签字确认视图 -->
+            <div v-if="stage === 'washed' && washedTab === 'sign'">
+              <div v-if="washedSignItems.length > 0" class="sign-confirm-view">
+                <div class="sign-confirm-view__decor"></div>
+                <div class="sign-confirm-view__header">
+                  <div class="sign-confirm-view__count">{{ washedSignItems.length }}</div>
+                  <div class="sign-confirm-view__label">种类型布草待领取确认</div>
+                </div>
+                <div class="sign-confirm-view__list">
+                  <div v-for="(item, i) in washedSignItems" :key="i" class="sign-confirm-view__item">
+                    <span class="sign-confirm-view__item-name">{{ item.itemName }}{{ item.quantity > 1 ? ` x${item.quantity}` : '' }}</span>
+                    <span class="sign-confirm-view__item-person">{{ item.staffName }}</span>
+                  </div>
+                </div>
+                <div class="sign-confirm-view__actions">
+                  <button type="button" class="sign-confirm-view__clear" @click="resetWashedSign">清空列表</button>
+                  <van-button type="primary" round @click="openWashedSignPopup">签字确认领取</van-button>
+                </div>
+              </div>
+              <div v-else class="sign-confirm-view sign-confirm-view--empty">
+                <div class="sign-confirm-view__decor"></div>
+                <div class="sign-confirm-view__empty-text">在分拣模式或批次情况中选择布草后<br>此处显示待确认列表</div>
+              </div>
+            </div>
+
+            <!-- 待发放分拣视图 -->
+            <div v-if="stage === 'received' && receivedTab === 'sort' && sortingGroups.length > 0" class="sorting-view">
+              <!-- 人名快捷栏 -->
+              <div class="sorting-persons">
+                <button
+                  v-for="p in sortingPersons"
+                  :key="p.staffId"
+                  type="button"
+                  class="sorting-person-chip"
+                  :class="{ 'is-done': p.allSorted }"
+                  @click="openSortingPerson(p)"
+                >
+                  {{ p.staffName }}
+                  <span>{{ p.sortedQty }}/{{ p.totalQty }}</span>
+                </button>
+                <button v-if="sortedItemIds.size > 0" type="button" class="sorting-reset-btn" @click="resetSorting">重新分拣</button>
+              </div>
+
+              <!-- 按类型分组 -->
+              <div class="sorting-list">
+                <div v-for="group in sortingGroups" :key="group.typeName" class="sorting-group">
+                  <button type="button" class="sorting-group__head" :class="{ 'is-done': group.allSorted }" @click="toggleSortingGroup(group.typeName)">
+                    <span class="sorting-group__name">{{ group.typeName }}</span>
+                    <span class="sorting-group__count">{{ group.count }} 件</span>
+                    <van-icon :name="sortingExpanded[group.typeName] ? 'arrow-up' : 'arrow-down'" size="14" class="sorting-group__arrow" />
+                  </button>
+                  <div v-if="sortingExpanded[group.typeName]" class="sorting-group__body">
+                    <div
+                      v-for="(item, idx) in group.items"
+                      :key="idx"
+                      class="sorting-item"
+                      :class="{ 'is-sorted': sortedItemIds.has(item.id) }"
+                      @click="toggleSorted(item.id)"
+                    >
+                      <img v-if="item.photo" :src="item.photo" class="sorting-item__photo zoomable-photo" @click.stop="openPhotoViewer(item.photo)" />
+                      <div v-else class="sorting-item__no-photo"><van-icon name="photo-o" size="20" /></div>
+                      <div class="sorting-item__info">
+                        <div class="sorting-item__name">{{ getRecordDisplayTitle(item) }}</div>
+                        <div v-if="item.note" class="sorting-item__note">{{ item.note }}</div>
+                      </div>
+                      <div class="sorting-item__person">
+                        <strong>{{ item.staffName }}</strong>
+                        <span>{{ item.deptName }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 签字确认视图 -->
+            <div v-if="stage === 'received' && receivedTab === 'sign'" class="signing-view">
+              <div v-if="pendingSignByDept.length > 0">
+                <div v-for="dept in pendingSignByDept" :key="dept.deptName" class="signing-dept-group">
+                  <div class="signing-dept-group__label">{{ dept.deptName }}</div>
+                  <div class="sorting-list">
+                    <article
+                      v-for="person in dept.persons"
+                      :key="person.staffId"
+                      class="signing-person-card"
+                    >
+                      <div class="signing-person-card__head">
+                        <div>
+                          <div class="signing-person-card__name">{{ person.staffName }}</div>
+                          <div class="signing-person-card__meta">{{ person.totalQty }} 件</div>
+                        </div>
+                        <van-button type="primary" size="small" round @click="openDistributionSlip(null, person)">签字发放</van-button>
+                      </div>
+                      <div class="signing-person-card__items">
+                        <span v-for="(item, i) in person.items" :key="i">{{ getRecordDisplayTitle(item) }}</span>
+                      </div>
+                    </article>
+                  </div>
+                </div>
+              </div>
+              <div v-else class="create-block__empty">在分拣模式中完成某人的全部分拣后，此处自动出现签字入口</div>
+            </div>
+
+            <template v-if="(stage === 'pending' && pendingTab === 'batch') || (stage === 'washed' && washedTab === 'batch') || (stage === 'received' && receivedTab === 'batch')">
             <div v-if="getStageGroups(stage).length > 0 && stage !== 'received'" class="stage-action-bar">
               <van-button plain round size="small" type="primary" @click="selectAllStage(stage)">
                 {{ isAllStageSelected(stage) ? '取消全选' : '全选' }}
               </van-button>
               <van-button
-                v-if="stage === 'washed'"
-                plain round size="small"
-                :type="hasStageContent(stage) ? 'primary' : 'default'"
-                :disabled="!hasStageContent(stage)"
-                @click="copyStageLedger(stage)"
-              >复制台账</van-button>
-              <van-button
                 round size="small"
                 :type="canAdvanceStage(stage) ? 'primary' : 'default'"
                 :plain="!canAdvanceStage(stage)"
                 :disabled="!canAdvanceStage(stage)"
-                @click="advanceRecords(stage, getSelectionListRef(stage).value)"
-              >{{ getActionText(stage) }}{{ getSelectionCount(stage) ? ` (${getSelectionCount(stage)})` : '' }}</van-button>
+                @click="stage === 'pending' ? addPendingSelectedToSign() : (stage === 'washed' ? addWashedSelectedToSign() : advanceRecords(stage, getSelectionListRef(stage).value))"
+              >{{ (stage === 'pending' || stage === 'washed') ? '加入签字确认' : getActionText(stage) }}{{ getSelectionCount(stage) ? ` (${getSelectionCount(stage)})` : '' }}</van-button>
             </div>
 
-            <div v-if="getStageGroups(stage).length === 0" class="stage-empty-hint">暂无</div>
+            <div v-if="getStageGroups(stage).length === 0 && ((stage === 'pending' && pendingSignIds.size > 0) || (stage === 'washed' && washedSignIds.size > 0))" class="stage-empty-hint">
+              全部已加入签字确认，请切换到"签字确认"标签完成签字
+            </div>
+            <div v-else-if="getStageGroups(stage).length === 0" class="stage-empty-hint">暂无</div>
 
             <div v-else class="lane-stack">
               <article v-for="group in getStageGroups(stage)" :key="group.batchId" class="lane-card">
@@ -1661,7 +2343,7 @@ function scrollToSection(key) {
                   <article v-for="person in group.people" :key="person.key" class="person-panel">
                     <div class="person-panel__head">
                       <div>
-                        <div class="person-panel__title">{{ person.staffName }}</div>
+                        <button type="button" class="person-panel__title person-panel__title--link" @click.stop="goBatchDetail(group.batchId, person.items[0]?.staffId)">{{ person.staffName }}</button>
                         <div class="person-panel__meta">{{ person.deptName }}</div>
                       </div>
                       <div class="person-panel__actions">
@@ -1688,6 +2370,10 @@ function scrollToSection(key) {
                         <div class="record-card__body">
                           <div class="record-card__title-row">
                             <strong>{{ getRecordDisplayTitle(item) }}</strong>
+                            <div class="record-card__id-group">
+                              <span v-if="item.deliveryId && (stage === 'washed' || stage === 'received')" class="record-card__id-tag">{{ item.deliveryId }}</span>
+                              <span v-if="item.pickupId && stage === 'received'" class="record-card__id-tag">{{ item.pickupId }}</span>
+                            </div>
                           </div>
                           <div v-if="getStageDateLabel(stage, { ...item, batchDate: group.batchDate })" class="record-card__meta">
                             {{ getStageDateLabel(stage, { ...item, batchDate: group.batchDate }) }}
@@ -1704,7 +2390,7 @@ function scrollToSection(key) {
                   <article v-for="person in group.people" :key="person.key" class="person-panel">
                     <div class="person-panel__head">
                       <div>
-                        <div class="person-panel__title">{{ person.staffName }}</div>
+                        <button type="button" class="person-panel__title person-panel__title--link" @click.stop="goBatchDetail(group.batchId, person.items[0]?.staffId)">{{ person.staffName }}</button>
                         <div class="person-panel__meta">{{ person.deptName }}</div>
                       </div>
                       <div class="person-panel__actions">
@@ -1726,6 +2412,10 @@ function scrollToSection(key) {
                         <div class="record-card__body">
                           <div class="record-card__title-row">
                             <strong>{{ getRecordDisplayTitle(item) }}</strong>
+                            <div class="record-card__id-group">
+                              <span v-if="item.deliveryId" class="record-card__id-tag">{{ item.deliveryId }}</span>
+                              <span v-if="item.pickupId" class="record-card__id-tag">{{ item.pickupId }}</span>
+                            </div>
                           </div>
                           <div v-if="item.note" class="record-card__note">备注：{{ item.note }}</div>
                           <img v-if="item.photo" :src="item.photo" class="record-card__photo zoomable-photo" @click.stop="openPhotoViewer(item.photo)" />
@@ -1736,6 +2426,7 @@ function scrollToSection(key) {
                 </div>
               </article>
             </div>
+            </template>
           </section>
         </div>
       </div>
@@ -1830,24 +2521,31 @@ function scrollToSection(key) {
               <div v-for="item in group.items" :key="item.id" class="item-row">
                 <div class="item-row__main">
                   <div class="item-row__name">{{ item.name }}</div>
-                  <van-stepper
-                    :model-value="getQuantity(item.id)"
-                    min="0"
-                    :default-value="0"
-                    input-width="56px"
-                    button-size="36px"
-                    @update:model-value="value => onItemQuantityChange(item, value)"
-                  />
+                  <div v-if="unlockedItems[item.id]" class="item-row__stepper-wrap">
+                    <van-stepper
+                      :model-value="getQuantity(item.id)"
+                      min="0"
+                      :default-value="0"
+                      input-width="42px"
+                      button-size="28px"
+                      @update:model-value="value => onItemQuantityChange(item, value)"
+                    />
+                    <button type="button" class="item-row__action" @click="toggleItemLock(item.id)">完成</button>
+                  </div>
+                  <div v-else class="item-row__locked">
+                    <span v-if="getQuantity(item.id) > 0" class="item-row__qty-badge">{{ getQuantity(item.id) }}</span>
+                    <button type="button" class="item-row__action" @click="toggleItemLock(item.id)">编辑</button>
+                  </div>
                 </div>
 
                 <div v-if="item.category !== 'personal' && getQuantity(item.id) > 0" class="item-extra-block">
                   <div class="item-extra-row">
                     <van-button size="small" round type="primary" plain @click.stop="openCameraCapture(item.id)">
-                      打开相机
+                      拍照
                     </van-button>
                     <label class="photo-btn">
                       <van-icon name="photograph" size="18" />
-                      {{ itemPhotos[item.id] ? '重新上传' : '上传照片' }}
+                      {{ itemPhotos[item.id] ? '重新上传' : '上传' }}
                       <input
                         type="file"
                         accept="image/*"
@@ -1878,11 +2576,11 @@ function scrollToSection(key) {
                     </div>
                     <div class="item-extra-row">
                       <van-button size="small" round type="primary" plain @click.stop="openCameraCapture(item.id, pieceIndex - 1)">
-                        打开相机
+                        拍照
                       </van-button>
                       <label class="photo-btn">
                         <van-icon name="photograph" size="18" />
-                        {{ getPieceDetail(item.id, pieceIndex - 1).photo ? '重新上传' : '上传照片' }}
+                        {{ getPieceDetail(item.id, pieceIndex - 1).photo ? '重新上传' : '上传' }}
                         <input
                           type="file"
                           accept="image/*"
@@ -1931,7 +2629,7 @@ function scrollToSection(key) {
       :style="{ height: '100%' }"
       @opened="onSlipPopupOpen"
     >
-      <div class="popup-sheet popup-sheet--tall">
+      <div class="popup-sheet popup-sheet--tall sign-page">
         <div class="popup-page-header">
           <button type="button" class="popup-page-header__back" @click="showSlipPopup = false">
             <van-icon name="arrow-left" size="18" /><span>返回</span>
@@ -1950,9 +2648,8 @@ function scrollToSection(key) {
 
             <div class="slip-card__list">
               <div v-for="(item, index) in slipRecord.items" :key="`${item.itemTypeId || item.id}-${index}`" class="slip-card__item">
-                <strong>{{ item.itemName || getRecordDisplayTitle(item) }}</strong>
-                <span v-if="item.showPieceNo">第{{ item.pieceNo }}件</span>
-                <span>x{{ item.quantity }}</span>
+                <strong>{{ item.itemName || getRecordDisplayTitle(item) }}{{ item.showPieceNo ? `（第${item.pieceNo}件）` : '' }}</strong>
+                <span v-if="!item.pieceNo && item.quantity > 1">x{{ item.quantity }}</span>
                 <span v-if="item.note">备注：{{ item.note }}</span>
               </div>
             </div>
@@ -1960,7 +2657,7 @@ function scrollToSection(key) {
             <!-- 接收模式：签字画板内嵌 -->
             <section v-if="slipMode === 'intake'" class="signature-panel">
               <div class="signature-panel__toolbar">
-                <div class="signature-panel__title">员工签字确认</div>
+                <div class="signature-panel__title">签字区域</div>
                 <div class="signature-panel__actions">
                   <button type="button" class="signature-panel__link" @click="markIntakeNoSign">无签字</button>
                   <button type="button" class="signature-panel__link" @click="resetIntakeToCanvas">清空重签</button>
@@ -1984,7 +2681,7 @@ function scrollToSection(key) {
             <!-- 发放模式：内嵌签字画板 -->
             <section v-else class="signature-panel">
               <div class="signature-panel__toolbar">
-                <div class="signature-panel__title">员工签字确认</div>
+                <div class="signature-panel__title">签字区域</div>
                 <div class="signature-panel__actions">
                   <button type="button" class="signature-panel__link" @click="markDistNoSign">无签字</button>
                   <button type="button" class="signature-panel__link" @click="resetDistToCanvas">清空重签</button>
@@ -2008,7 +2705,7 @@ function scrollToSection(key) {
         </template>
 
         <div class="bottom-actions">
-          <van-button v-if="slipMode === 'intake'" block type="primary" @click="confirmAndAddRecord">确认无误</van-button>
+          <van-button v-if="slipMode === 'intake'" block type="primary" @click="confirmIntakeSlip">确认无误</van-button>
           <van-button v-if="slipMode !== 'intake'" block type="primary" @click="confirmDistribution">确认发放</van-button>
         </div>
       </div>
@@ -2035,8 +2732,8 @@ function scrollToSection(key) {
               class="detail-item-row"
             >
               <div class="detail-item-row__head">
-                <span class="detail-item-row__name">{{ item.itemName }}{{ item.pieceNo ? ` · 第${item.pieceNo}件` : '' }}</span>
-                <span class="detail-item-row__qty">x{{ item.quantity }}</span>
+                <span class="detail-item-row__name">{{ item.itemName }}{{ item.showPieceNo ? `（第${item.pieceNo}件）` : '' }}</span>
+                <span v-if="!item.pieceNo && item.quantity > 1" class="detail-item-row__qty">x{{ item.quantity }}</span>
               </div>
               <div v-if="item.note" class="detail-item-row__note">{{ item.note }}</div>
               <img v-if="item.photo" :src="item.photo" class="detail-item-row__photo zoomable-photo" @click="openPhotoViewer(item.photo)" />
@@ -2111,15 +2808,145 @@ function scrollToSection(key) {
     </van-popup>
 
     <van-popup v-model:show="showPhotoViewer" position="bottom" class="popup-fullpage" :style="{ height: '100%' }">
-      <div class="popup-sheet popup-sheet--tall photo-viewer">
+      <div class="popup-sheet popup-sheet--tall">
         <div class="popup-page-header">
           <button type="button" class="popup-page-header__back" @click="showPhotoViewer = false">
             <van-icon name="arrow-left" size="18" /><span>返回</span>
           </button>
           <div class="popup-page-header__title">查看图片</div>
         </div>
-        <div class="photo-viewer__body">
-          <img :src="viewerPhoto" class="photo-viewer__image" />
+        <div class="photo-viewer__body" @click="showPhotoViewer = false">
+          <img :src="viewerPhoto" class="photo-viewer__image" @click.stop />
+        </div>
+      </div>
+    </van-popup>
+
+    <van-popup v-model:show="showSortingPersonPopup" position="bottom" class="popup-fullpage" :style="{ height: '100%' }">
+      <div class="popup-sheet popup-sheet--tall">
+        <div class="popup-page-header">
+          <button type="button" class="popup-page-header__back" @click="showSortingPersonPopup = false">
+            <van-icon name="arrow-left" size="18" /><span>返回</span>
+          </button>
+          <div class="popup-page-header__title">{{ sortingPersonDetail?.staffName }} · 待发放</div>
+        </div>
+        <template v-if="sortingPersonDetail">
+          <div class="sorting-person-summary">
+            {{ sortingPersonDetail.deptName }} · {{ sortingPersonDetail.sortedQty }}/{{ sortingPersonDetail.totalQty }} 已分拣
+            <van-button v-if="!sortingPersonDetail.allSorted" plain round size="small" style="margin-left: 12px" @click="addPersonToSign(sortingPersonDetail)">加入签字确认</van-button>
+          </div>
+          <div class="sorting-list">
+            <div
+              v-for="(item, idx) in sortingPersonDetail.items"
+              :key="idx"
+              class="sorting-item"
+              :class="{ 'is-sorted': sortedItemIds.has(item.id) }"
+            >
+              <img v-if="item.photo" :src="item.photo" class="sorting-item__photo zoomable-photo" @click.stop="openPhotoViewer(item.photo)" />
+              <div v-else class="sorting-item__no-photo"><van-icon name="photo-o" size="20" /></div>
+              <div class="sorting-item__info">
+                <div class="sorting-item__name">{{ getRecordDisplayTitle(item) }}</div>
+                <div v-if="item.note" class="sorting-item__note">{{ item.note }}</div>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </van-popup>
+
+    <van-popup v-model:show="showPendingSignPopup" position="bottom" class="popup-fullpage" :style="{ height: '100%' }" @opened="onPendingSignOpen">
+      <div class="popup-sheet popup-sheet--tall sign-page">
+        <div class="sign-page__decor-tl"></div>
+        <div class="sign-page__decor-br"></div>
+        <div class="popup-page-header">
+          <button type="button" class="popup-page-header__back" @click="showPendingSignPopup = false">
+            <van-icon name="arrow-left" size="18" /><span>返回</span>
+          </button>
+          <div class="popup-page-header__title">签字确认送洗</div>
+        </div>
+
+        <div class="sign-page__summary">
+          <div class="sign-page__count">{{ pendingSignItems.length }}</div>
+          <div class="sign-page__count-label">件布草</div>
+        </div>
+
+        <div class="sign-page__items">
+          <span v-for="(item, i) in pendingSignItems" :key="i" class="sign-page__tag">{{ item.itemName }}{{ item.quantity > 1 ? ` x${item.quantity}` : '' }} · {{ item.staffName }}</span>
+        </div>
+
+        <section class="signature-panel">
+          <div class="signature-panel__toolbar">
+            <div class="signature-panel__title">签字区域</div>
+            <div class="signature-panel__actions">
+              <button type="button" class="signature-panel__link" @click="pendingSignNoSign = true">无签字</button>
+              <button type="button" class="signature-panel__link" @click="pendingSignNoSign = false; onPendingSignOpen()">清空重签</button>
+            </div>
+          </div>
+          <div class="signature-board">
+            <div v-if="pendingSignNoSign" class="signature-board__no-sign-overlay">无签字</div>
+            <canvas
+              v-show="!pendingSignNoSign"
+              ref="pendingSignCanvasRef"
+              class="signature-board__canvas"
+              @pointerdown="startPendingSign"
+              @pointermove="movePendingSign"
+              @pointerup="endPendingSign"
+              @pointerleave="endPendingSign"
+              @pointercancel="endPendingSign"
+            />
+          </div>
+        </section>
+
+        <div class="bottom-actions">
+          <van-button block type="primary" round size="large" @click="confirmPendingSignAction">确认送洗</van-button>
+        </div>
+      </div>
+    </van-popup>
+
+    <van-popup v-model:show="showWashedSignPopup" position="bottom" class="popup-fullpage" :style="{ height: '100%' }" @opened="onWashedSignOpen">
+      <div class="popup-sheet popup-sheet--tall sign-page">
+        <div class="sign-page__decor-tl"></div>
+        <div class="sign-page__decor-br"></div>
+        <div class="popup-page-header">
+          <button type="button" class="popup-page-header__back" @click="showWashedSignPopup = false">
+            <van-icon name="arrow-left" size="18" /><span>返回</span>
+          </button>
+          <div class="popup-page-header__title">签字确认领取</div>
+        </div>
+
+        <div class="sign-page__summary">
+          <div class="sign-page__count">{{ washedSignItems.length }}</div>
+          <div class="sign-page__count-label">件布草</div>
+        </div>
+
+        <div class="sign-page__items">
+          <span v-for="(item, i) in washedSignItems" :key="i" class="sign-page__tag">{{ item.itemName }}{{ item.quantity > 1 ? ` x${item.quantity}` : '' }} · {{ item.staffName }}</span>
+        </div>
+
+        <section class="signature-panel">
+          <div class="signature-panel__toolbar">
+            <div class="signature-panel__title">签字区域</div>
+            <div class="signature-panel__actions">
+              <button type="button" class="signature-panel__link" @click="washedSignNoSign = true">无签字</button>
+              <button type="button" class="signature-panel__link" @click="washedSignNoSign = false; onWashedSignOpen()">清空重签</button>
+            </div>
+          </div>
+          <div class="signature-board">
+            <div v-if="washedSignNoSign" class="signature-board__no-sign-overlay">无签字</div>
+            <canvas
+              v-show="!washedSignNoSign"
+              ref="washedSignCanvasRef"
+              class="signature-board__canvas"
+              @pointerdown="startWashedSign"
+              @pointermove="moveWashedSign"
+              @pointerup="endWashedSign"
+              @pointerleave="endWashedSign"
+              @pointercancel="endWashedSign"
+            />
+          </div>
+        </section>
+
+        <div class="bottom-actions">
+          <van-button block type="primary" round size="large" @click="confirmWashedSignAction">确认领取</van-button>
         </div>
       </div>
     </van-popup>

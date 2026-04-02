@@ -1,11 +1,11 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showConfirmDialog, showFailToast, showSuccessToast } from 'vant'
 import { db } from '../db/index.js'
 import { saveToDesktopStorage } from '../utils/desktopStorage.js'
 import { buildBatchCodeMap, getBatchDisplayLabel } from '../utils/batchDisplay.js'
-import { computeBatchProgress, getStatusMeta, summarizeRecordStatus } from '../utils/recordStatus.js'
+import { computeBatchProgress, getStatusMeta, resizeImageToBase64, summarizeRecordStatus } from '../utils/recordStatus.js'
 
 const route = useRoute()
 const router = useRouter()
@@ -21,12 +21,162 @@ const noteDraft = ref('')
 const showPhotoViewer = ref(false)
 const viewerPhoto = ref('')
 
+const showCameraPopup = ref(false)
+const cameraVideoRef = ref(null)
+const cameraTarget = ref(null)
+const cameraBusy = ref(false)
+const cameraStatus = ref('')
+let cameraStream = null
+
 function openPhotoViewer(src) {
   viewerPhoto.value = src
   showPhotoViewer.value = true
 }
 
-onMounted(loadData)
+function stopCameraStream() {
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(track => track.stop())
+    cameraStream = null
+  }
+  if (cameraVideoRef.value) {
+    cameraVideoRef.value.srcObject = null
+  }
+}
+
+function scoreCameraLabel(label = '') {
+  const normalized = label.toLowerCase()
+  let score = 0
+  if (/rear|back|environment|world|后/.test(normalized)) score += 5
+  if (/front|user|前|ir/.test(normalized)) score -= 4
+  return score
+}
+
+async function findRearCameraDevice() {
+  if (!navigator.mediaDevices?.enumerateDevices) return null
+  const devices = await navigator.mediaDevices.enumerateDevices()
+  const videoInputs = devices.filter(device => device.kind === 'videoinput')
+  if (videoInputs.length === 0) return null
+  return [...videoInputs].sort((left, right) => scoreCameraLabel(right.label) - scoreCameraLabel(left.label))[0]
+}
+
+async function requestCamera(constraints) {
+  return navigator.mediaDevices.getUserMedia({ video: constraints, audio: false })
+}
+
+async function bindCameraStream(stream) {
+  cameraStream = stream
+  const video = cameraVideoRef.value
+  if (!video) return
+  video.srcObject = stream
+  await video.play().catch(() => {})
+}
+
+async function startCameraStream() {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    showFailToast('当前设备不支持直接调用摄像头，请改用上传照片')
+    showCameraPopup.value = false
+    return
+  }
+
+  cameraBusy.value = true
+  cameraStatus.value = '正在启动后摄...'
+  stopCameraStream()
+
+  try {
+    let stream = null
+    try {
+      stream = await requestCamera({ facingMode: { exact: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } })
+    } catch {
+      try {
+        stream = await requestCamera({ facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } })
+      } catch {
+        stream = await requestCamera({ width: { ideal: 1920 }, height: { ideal: 1080 } })
+      }
+    }
+
+    const preferredDevice = await findRearCameraDevice()
+    const currentTrack = stream.getVideoTracks()[0]
+    const currentLabel = currentTrack?.label || ''
+
+    if (preferredDevice && scoreCameraLabel(preferredDevice.label) > scoreCameraLabel(currentLabel)) {
+      stream.getTracks().forEach(track => track.stop())
+      stream = await requestCamera({ deviceId: { exact: preferredDevice.deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } })
+      cameraStatus.value = `已连接后摄：${preferredDevice.label || '后置摄像头'}`
+    } else {
+      cameraStatus.value = currentLabel ? `当前摄像头：${currentLabel}` : '摄像头已启动，可以直接拍照'
+    }
+
+    await bindCameraStream(stream)
+  } catch (error) {
+    showFailToast(error?.message || '无法打开摄像头，请检查 Windows 摄像头权限')
+    showCameraPopup.value = false
+  } finally {
+    cameraBusy.value = false
+  }
+}
+
+async function openCamera(recordId) {
+  cameraTarget.value = recordId
+  showCameraPopup.value = true
+  await nextTick()
+  await startCameraStream()
+}
+
+function closeCameraPopup() {
+  showCameraPopup.value = false
+}
+
+function captureCameraPhoto() {
+  const video = cameraVideoRef.value
+  if (!video || !video.videoWidth || !video.videoHeight) {
+    showFailToast('摄像头还没准备好，请稍后再拍')
+    return
+  }
+
+  const canvas = document.createElement('canvas')
+  canvas.width = video.videoWidth
+  canvas.height = video.videoHeight
+  const ctx = canvas.getContext('2d')
+  if (!ctx) {
+    showFailToast('拍照失败，请重试')
+    return
+  }
+
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+  const base64 = canvas.toDataURL('image/jpeg', 0.9)
+
+  db.records.update(cameraTarget.value, { photo: base64 }).then(() => {
+    saveToDesktopStorage()
+    loadData()
+    showSuccessToast('照片已保存')
+    closeCameraPopup()
+  })
+}
+
+async function handleFilePhoto(recordId, event) {
+  const file = event.target.files?.[0]
+  if (!file) return
+  try {
+    const base64 = await resizeImageToBase64(file, 1280)
+    await db.records.update(recordId, { photo: base64 })
+    await saveToDesktopStorage()
+    await loadData()
+    showSuccessToast('照片已保存')
+  } catch {
+    showFailToast('照片处理失败')
+  } finally {
+    event.target.value = ''
+  }
+}
+
+onBeforeUnmount(() => {
+  stopCameraStream()
+})
+
+onMounted(async () => {
+  await loadData()
+  scrollToTargetStaff()
+})
 
 async function loadData() {
   const id = route.params.id
@@ -36,6 +186,19 @@ async function loadData() {
   departments.value = await db.departments.toArray()
   staffList.value = await db.staff.toArray()
   itemTypes.value = await db.itemTypes.toArray()
+}
+
+function scrollToTargetStaff() {
+  const staffId = route.query.staff
+  if (!staffId) return
+  nextTick(() => {
+    const el = document.getElementById(`staff-${staffId}`)
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      el.classList.add('staff-panel--highlight')
+      setTimeout(() => el.classList.remove('staff-panel--highlight'), 2000)
+    }
+  })
 }
 
 const summary = computed(() => summarizeRecordStatus(records.value))
@@ -78,8 +241,9 @@ function buildSignatureGroups(items, fieldPrefix) {
 }
 
 function getItemDisplayName(item) {
-  const pieceText = item.showPieceNo ? `第${item.pieceNo}件` : ''
-  return `${item.itemName}${pieceText ? `·${pieceText}` : ''} x${item.quantity}`
+  const piece = item.showPieceNo ? `（第${item.pieceNo}件）` : ''
+  const qty = !item.pieceNo && item.quantity > 1 ? ` x${item.quantity}` : ''
+  return `${item.itemName}${piece}${qty}`
 }
 
 function formatSignedAt(value) {
@@ -105,6 +269,7 @@ const groupedRecords = computed(() => {
     if (!groups.has(key)) {
       groups.set(key, {
         key,
+        staffId: record.staffId,
         deptName: deptMap.get(record.departmentId) || '',
         staffName: staffMap.get(record.staffId) || '',
         items: [],
@@ -144,22 +309,32 @@ const groupedRecords = computed(() => {
         // Personal items (with pieceNo): one row per piece
         if (tg.pieces.length > 0) {
           return tg.records.map(r => ({
-            itemName: `${tg.itemName}（第${r.pieceNo}件）`,
+            itemName: tg.itemName,
             quantity: r.quantity,
+            pieceNo: r.pieceNo,
+            showPieceNo: tg.pieces.length > 1 && !!r.pieceNo,
             pieceLabel: '',
             statusMeta: r.statusMeta,
             sentAt: r.sentAt,
             receivedAt: r.receivedAt,
             distributedAt: r.distributedAt,
+            deliveryId: r.deliveryId || '',
+            pickupId: r.pickupId || '',
+            distributionId: r.distributionId || '',
             notes: r.note ? [r.note] : [],
             photos: r.photo ? [r.photo] : [],
+            recordIds: [r.id],
+            hasNoPhoto: !r.photo,
           }))
         }
         // Non-personal items: merge into one row
         const totalQty = tg.records.reduce((s, r) => s + r.quantity, 0)
         const notes = tg.records.filter(r => r.note).map(r => r.note)
         const photos = tg.records.filter(r => r.photo).map(r => r.photo)
+        const noPhotoRecords = tg.records.filter(r => !r.photo)
         const latestStatus = tg.records.reduce((best, r) => r.statusMeta.order > best.statusMeta.order ? r : best, tg.records[0])
+        const deliveryIds = [...new Set(tg.records.map(r => r.deliveryId).filter(Boolean))]
+        const pickupIds = [...new Set(tg.records.map(r => r.pickupId).filter(Boolean))]
         return [{
           itemName: tg.itemName,
           quantity: totalQty,
@@ -168,8 +343,13 @@ const groupedRecords = computed(() => {
           sentAt: tg.records[0].sentAt,
           receivedAt: tg.records[0].receivedAt,
           distributedAt: tg.records[0].distributedAt,
+          deliveryId: deliveryIds.join('、'),
+          pickupId: pickupIds.join('、'),
+          distributionId: [...new Set(tg.records.map(r => r.distributionId).filter(Boolean))].join('、'),
           notes,
           photos,
+          recordIds: noPhotoRecords.length > 0 ? [noPhotoRecords[0].id] : [],
+          hasNoPhoto: noPhotoRecords.length > 0,
         }]
       })
 
@@ -314,7 +494,7 @@ const timelineNodes = computed(() => {
         </div>
 
         <div v-for="group in groupedRecords" :key="group.key" class="detail-group">
-          <article class="staff-panel">
+          <article :id="`staff-${group.staffId}`" class="staff-panel">
             <div class="staff-panel__head">
               <div>
                 <div class="staff-panel__title">{{ group.staffName }}</div>
@@ -324,53 +504,66 @@ const timelineNodes = computed(() => {
 
             <div class="staff-panel__list">
               <div class="detail-item-list">
+                <div v-for="sig in group.intakeSignatures" :key="`intake-${sig.key}`" class="detail-item-row detail-item-row--sig">
+                  <div class="detail-sig-inline">
+                    <span class="detail-sig-inline__label">接收签字</span>
+                    <span class="detail-sig-inline__time">{{ formatSignedAt(sig.signedAt) }}</span>
+                  </div>
+                  <img v-if="sig.signature !== 'NO_SIGNATURE'" :src="sig.signature" class="signature-preview signature-preview--sm" />
+                  <div v-else class="signature-no-sign signature-no-sign--sm">无签字</div>
+                </div>
+
                 <div
                   v-for="(item, idx) in group.mergedItems"
                   :key="idx"
                   class="detail-item-row"
                 >
                   <div class="detail-item-row__head">
-                    <span class="detail-item-row__name">{{ item.itemName }}{{ item.quantity > 1 ? ` x${item.quantity}` : '' }}{{ item.pieceLabel }}</span>
-                    <van-tag :type="item.statusMeta.tag" plain size="medium">{{ item.statusMeta.label }}</van-tag>
+                    <span class="detail-item-row__name">{{ item.itemName }}{{ item.showPieceNo ? `（第${item.pieceNo}件）` : '' }}{{ !item.pieceNo && item.quantity > 1 ? ` x${item.quantity}` : '' }}</span>
+                    <div class="detail-item-row__tools">
+                      <template v-if="item.hasNoPhoto && item.recordIds.length > 0">
+                        <button type="button" class="detail-icon-btn" @click="openCamera(item.recordIds[0])"><van-icon name="photograph" size="16" /></button>
+                        <label class="detail-icon-btn"><van-icon name="photo-o" size="16" /><input type="file" accept="image/*" style="display:none" @change="handleFilePhoto(item.recordIds[0], $event)" /></label>
+                      </template>
+                      <van-tag :type="item.statusMeta.tag" plain size="medium">{{ item.statusMeta.label }}</van-tag>
+                    </div>
                   </div>
-                  <div class="detail-item__meta">
-                    <span v-if="item.sentAt">送洗 {{ item.sentAt }}</span>
-                    <span v-if="item.receivedAt">领取 {{ item.receivedAt }}</span>
-                    <span v-if="item.distributedAt">发放 {{ item.distributedAt }}</span>
-                    <span v-if="!item.sentAt && !item.receivedAt && !item.distributedAt">待送洗</span>
+                  <div class="detail-item__ids">
+                    <span v-if="item.deliveryId">送洗 {{ item.deliveryId }}</span>
+                    <span v-if="item.pickupId">领取 {{ item.pickupId }}</span>
+                    <span v-if="item.distributionId">发放 {{ item.distributionId }}</span>
                   </div>
                   <div v-for="(note, ni) in item.notes" :key="`n${ni}`" class="detail-item-row__note">{{ note }}</div>
-                  <img v-for="(photo, pi) in item.photos" :key="`p${pi}`" :src="photo" class="detail-item-row__photo zoomable-photo" @click="openPhotoViewer(photo)" />
+                  <div v-if="item.photos.length > 0" class="detail-photo-thumbs">
+                    <img v-for="(photo, pi) in item.photos" :key="`p${pi}`" :src="photo" class="detail-photo-thumb zoomable-photo" @click="openPhotoViewer(photo)" />
+                  </div>
                 </div>
               </div>
 
-              <div v-for="signatureGroup in group.intakeSignatures" :key="`intake-${signatureGroup.key}`" class="draft-signature-section">
-                <div class="draft-signature-section__label">接收签字 · {{ formatSignedAt(signatureGroup.signedAt) }}</div>
-                <div class="draft-signature-section__items">{{ signatureGroup.itemText }}</div>
-                <img v-for="(photo, pi) in signatureGroup.photos" :key="`ip${pi}`" :src="photo" class="detail-item-row__photo zoomable-photo" @click="openPhotoViewer(photo)" />
-                <img v-if="signatureGroup.signature !== 'NO_SIGNATURE'" :src="signatureGroup.signature" class="signature-preview" />
-                <div v-else class="signature-no-sign">无签字</div>
-              </div>
-              <div v-if="group.hasUnsignedIntake" class="draft-signature-section">
-                <div class="draft-signature-section__label">接收签字</div>
-                <div class="draft-signature-section__items">{{ group.unsignedIntakeText }}</div>
-                <div class="signature-no-sign">无签字</div>
-              </div>
-              <div v-for="signatureGroup in group.distributionSignatures" :key="`distribution-${signatureGroup.key}`" class="draft-signature-section">
-                <div class="draft-signature-section__label">发放签字 · {{ formatSignedAt(signatureGroup.signedAt) }}</div>
-                <div class="draft-signature-section__items">{{ signatureGroup.itemText }}</div>
-                <img v-for="(photo, pi) in signatureGroup.photos" :key="`dp${pi}`" :src="photo" class="detail-item-row__photo zoomable-photo" @click="openPhotoViewer(photo)" />
-                <img v-if="signatureGroup.signature !== 'NO_SIGNATURE'" :src="signatureGroup.signature" class="signature-preview" />
-                <div v-else class="signature-no-sign">无签字</div>
+              <div v-if="group.distributionSignatures.length > 0" class="detail-dist-list">
+                <div
+                  v-for="(sig, si) in group.distributionSignatures"
+                  :key="`dist-${sig.key}`"
+                  class="detail-dist-block"
+                >
+                  <div class="detail-dist-block__id">{{ sig.items[0]?.distributionId || '发放' }}</div>
+                  <div class="detail-dist-block__sign">
+                    <img v-if="sig.signature !== 'NO_SIGNATURE'" :src="sig.signature" class="signature-preview signature-preview--dist zoomable-photo" @click="openPhotoViewer(sig.signature)" />
+                    <div v-else class="signature-no-sign signature-no-sign--dist">无签字</div>
+                  </div>
+                  <div class="detail-dist-block__items">
+                    <div v-for="(item, ii) in sig.items" :key="ii" class="detail-dist-block__item">
+                      <span>{{ getItemDisplayName(item) }}</span>
+                      <img v-if="item.photo" :src="item.photo" class="detail-dist-block__thumb zoomable-photo" @click.stop="openPhotoViewer(item.photo)" />
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </article>
         </div>
       </div>
 
-      <div class="bottom-actions">
-        <van-button block plain type="danger" @click="deleteBatch">删除此批次</van-button>
-      </div>
     </template>
 
     <div v-else>
@@ -407,15 +600,38 @@ const timelineNodes = computed(() => {
     </van-popup>
 
     <van-popup v-model:show="showPhotoViewer" position="bottom" class="popup-fullpage" :style="{ height: '100%' }">
-      <div class="popup-sheet popup-sheet--tall photo-viewer">
+      <div class="popup-sheet popup-sheet--tall">
         <div class="popup-page-header">
           <button type="button" class="popup-page-header__back" @click="showPhotoViewer = false">
             <van-icon name="arrow-left" size="18" /><span>返回</span>
           </button>
           <div class="popup-page-header__title">查看图片</div>
         </div>
-        <div class="photo-viewer__body">
-          <img :src="viewerPhoto" class="photo-viewer__image" />
+        <div class="photo-viewer__body" @click="showPhotoViewer = false">
+          <img :src="viewerPhoto" class="photo-viewer__image" @click.stop />
+        </div>
+      </div>
+    </van-popup>
+
+    <van-popup v-model:show="showCameraPopup" position="bottom" class="popup-fullpage" :style="{ height: '100%' }" @closed="stopCameraStream">
+      <div class="popup-sheet popup-sheet--tall camera-sheet">
+        <div class="popup-page-header">
+          <button type="button" class="popup-page-header__back" @click="closeCameraPopup">
+            <van-icon name="arrow-left" size="18" /><span>返回</span>
+          </button>
+          <div class="popup-page-header__title">拍照</div>
+          <button type="button" class="popup-page-header__action" @click="startCameraStream">重开相机</button>
+        </div>
+
+        <div class="camera-sheet__meta">优先调用 Surface 后摄；如果系统不支持，再用上传照片兜底。</div>
+
+        <div class="camera-preview">
+          <video ref="cameraVideoRef" class="camera-preview__video" autoplay playsinline muted />
+          <div v-if="cameraStatus" class="camera-preview__status">{{ cameraStatus }}</div>
+        </div>
+
+        <div class="bottom-actions">
+          <van-button block type="primary" :loading="cameraBusy" @click="captureCameraPhoto">拍照保存</van-button>
         </div>
       </div>
     </van-popup>
