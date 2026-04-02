@@ -48,6 +48,16 @@ db.version(5).stores({
   priceTables: '++id, name',
 })
 
+db.version(6).stores({
+  departments: '++id, name, sortOrder',
+  staff: '++id, name, departmentId, isActive',
+  itemTypes: '++id, name, category, sortOrder',
+  batches: 'id, sendDate, createdAt',
+  records: 'id, batchId, departmentId, staffId, itemTypeId, status, sentAt, receivedAt, distributedAt, deliveryId, pickupId, distributionId, priceTableId, subStatus',
+  settings: 'key',
+  priceTables: '++id, name',
+})
+
 const defaultDepartments = [
   { name: '领导', sortOrder: 1 },
   { name: '运行中心', sortOrder: 2 },
@@ -491,12 +501,42 @@ async function backfillPriceTableId() {
   })
 }
 
+async function backfillSubStatus() {
+  const validKeys = new Set([
+    'pending_pack','pending_transit','pending_arrive','pending_sign',
+    'washed_washing','washed_sign','washed_waiting','washed_transit','washed_arrived',
+    'received_sort','received_sign',
+  ])
+  const defaults = {
+    pending:     'pending_pack',
+    washed:      'washed_washing',
+    received:    'received_sort',
+    distributed: 'received_sign',
+  }
+  const records = await db.records.toArray()
+  const needsUpdate = records.filter(r => !r.subStatus || !validKeys.has(r.subStatus))
+  if (needsUpdate.length === 0) return
+  await db.records.where('id').anyOf(needsUpdate.map(r => r.id)).modify(record => {
+    record.subStatus = defaults[record.status] || 'pending_uncat'
+  })
+}
+
+async function renamePickupIdPrefix() {
+  const records = await db.records.filter(r => r.pickupId && r.pickupId.startsWith('LQ')).toArray()
+  if (records.length === 0) return
+  await db.records.where('id').anyOf(records.map(r => r.id)).modify(record => {
+    record.pickupId = 'QH' + record.pickupId.slice(2)
+  })
+}
+
 export async function runPostHydrateMigrations() {
   await normalizeItemTypes()
   await backfillMissingIntakeSignatures()
   await backfillMissingDeliveryIds()
   await ensurePriceTable()
   await backfillPriceTableId()
+  await backfillSubStatus()
+  await renamePickupIdPrefix()
 }
 
 export async function initDB() {

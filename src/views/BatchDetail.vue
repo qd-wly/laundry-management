@@ -444,7 +444,7 @@ const timelineNodes = computed(() => {
       active: s.pending === 0 && total > 0,
     },
     {
-      label: '待领取',
+      label: '待取回',
       text: s.washed,
       active: s.pending === 0 && s.washed === 0 && total > 0,
     },
@@ -530,7 +530,7 @@ const timelineNodes = computed(() => {
                   </div>
                   <div class="detail-item__ids">
                     <span v-if="item.deliveryId">送洗 {{ item.deliveryId }}</span>
-                    <span v-if="item.pickupId">领取 {{ item.pickupId }}</span>
+                    <span v-if="item.pickupId">取回 {{ item.pickupId }}</span>
                     <span v-if="item.distributionId">发放 {{ item.distributionId }}</span>
                   </div>
                   <div v-for="(note, ni) in item.notes" :key="`n${ni}`" class="detail-item-row__note">{{ note }}</div>

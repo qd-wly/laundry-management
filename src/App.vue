@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showConfirmDialog, showSuccessToast } from 'vant'
 import { devMode } from './utils/devModeState.js'
-import { enterDevMode } from './utils/devMode.js'
+import { enterDevMode, exitDevMode } from './utils/devMode.js'
 
 const router = useRouter()
 const route = useRoute()
@@ -23,16 +23,25 @@ const activeTabPath = computed(() => {
 let longPressTimer = null
 
 function onTabDown(tab) {
-  if (tab.path !== '/settings' || devMode.value) return
+  if (tab.path !== '/settings') return
   longPressTimer = setTimeout(async () => {
     longPressTimer = null
     try {
-      await showConfirmDialog({
-        title: '进入开发模式',
-        message: '进入后，所有操作均不会写入真实数据文件，退出后自动恢复原始数据。',
-      })
-      await enterDevMode()
-      showSuccessToast('已进入开发模式')
+      if (devMode.value) {
+        await showConfirmDialog({
+          title: '退出开发模式',
+          message: '退出后将恢复进入开发模式前的原始数据。',
+        })
+        await exitDevMode()
+        showSuccessToast('已退出开发模式')
+      } else {
+        await showConfirmDialog({
+          title: '进入开发模式',
+          message: '进入后，所有操作均不会写入真实数据文件，退出后自动恢复原始数据。',
+        })
+        await enterDevMode()
+        showSuccessToast('已进入开发模式')
+      }
     } catch {}
   }, 800)
 }

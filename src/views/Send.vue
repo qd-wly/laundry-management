@@ -14,6 +14,11 @@ import {
   getToday,
   resizeImageToBase64,
   summarizeRecordStatus,
+  FLOW_NODES,
+  getFlowNodes,
+  getNextFlowNode,
+  getFlowNodeMeta,
+  getDefaultSubStatus,
 } from '../utils/recordStatus.js'
 
 const router = useRouter()
@@ -70,8 +75,31 @@ const distNoSign = ref(false)
 const showPhotoViewer = ref(false)
 const viewerPhoto = ref('')
 const receivedTab = ref('batch')
+const activeFlowNode = ref({
+  pending: 'pending_pack',
+  washed: 'washed_washing',
+  received: 'received_sort',
+})
+const intakeNodes = [
+  { key: 'intake_new',   label: '新接收',   icon: 'add-o' },
+  { key: 'intake_draft', label: '批次草稿', icon: 'orders-o' },
+]
+const activeIntakeNode = ref('intake_new')
 const sortingExpanded = ref({})
 const sortedItemIds = ref(new Set())
+const showSortMode = ref(false)
+const showSignPopup = ref(false)
+const signPopupTitle = ref('')
+const signPopupItems = ref([])
+const signPopupAction = ref(null)
+const signCanvasRef = ref(null)
+const signHasStroke = ref(false)
+const signNoSign = ref(false)
+let signCtx = null
+const signStrokeCount = ref(0)
+let strokeHistory = []
+let currentStroke = []
+let glowFadeTimer = null
 const showSortingPersonPopup = ref(false)
 const sortingPersonDetail = ref(null)
 
@@ -105,6 +133,39 @@ function drawSignWatermark(ctx, w, h) {
   ctx.textBaseline = 'middle'
   ctx.fillText('签字区', w / 2, h / 2)
   ctx.restore()
+}
+
+function applySignGlow(ctx) {
+  // 不再添加发光效果
+}
+function recordStrokeStart(x, y) { currentStroke = [{ x, y }] }
+function recordStrokeMove(x, y) { currentStroke.push({ x, y }) }
+function recordStrokeEnd() { if (currentStroke.length > 1) strokeHistory.push([...currentStroke]); currentStroke = [] }
+function resetStrokeHistory() { strokeHistory = []; currentStroke = [] }
+function fadeGlowOnCanvas(canvas, ctx) {
+  // 不再需要发光消退
+}
+const signPageBgStyle = computed(() => ({}))
+function initSignCanvas() {
+  const canvas = signCanvasRef.value; if (!canvas) return
+  const rect = canvas.getBoundingClientRect(); const ratio = window.devicePixelRatio || 1
+  canvas.width = Math.max(1, Math.floor(rect.width * ratio)); canvas.height = Math.max(1, Math.floor(rect.height * ratio))
+  signCtx = canvas.getContext('2d'); if (!signCtx) return
+  signCtx.scale(ratio, ratio); signCtx.lineCap = 'round'; signCtx.lineJoin = 'round'; signCtx.lineWidth = 2.6
+  signCtx.strokeStyle = '#edf2f7'; signCtx.fillStyle = 'rgba(18, 26, 35, 1)'; signCtx.fillRect(0, 0, rect.width, rect.height)
+  drawSignWatermark(signCtx, rect.width, rect.height); signHasStroke.value = false
+}
+function onSignPopupOpen() { nextTick(() => initSignCanvas()) }
+function startSign(e) { if (!signCtx) return; e.preventDefault(); const r = signCanvasRef.value.getBoundingClientRect(); const x = e.clientX - r.left, y = e.clientY - r.top; applySignGlow(signCtx); signCtx.beginPath(); signCtx.moveTo(x, y); recordStrokeStart(x, y) }
+function moveSign(e) { if (!signCtx || e.buttons === 0) return; e.preventDefault(); const r = signCanvasRef.value.getBoundingClientRect(); const x = e.clientX - r.left, y = e.clientY - r.top; applySignGlow(signCtx); signCtx.lineTo(x, y); signCtx.stroke(); recordStrokeMove(x, y); signHasStroke.value = true; signStrokeCount.value++ }
+function endSign() { if (!signCtx) return; signCtx.closePath(); recordStrokeEnd(); fadeGlowOnCanvas(signCanvasRef.value, signCtx); if (signCanvasRef.value) signCanvasRef.value.blur() }
+function clearSignCanvas() { signNoSign.value = false; resetStrokeHistory(); signStrokeCount.value = 0; nextTick(() => initSignCanvas()) }
+async function confirmSignPopup() {
+  if (!signHasStroke.value && !signNoSign.value) { showToast('请先签字或选择无签字'); return }
+  const sig = signNoSign.value ? 'NO_SIGNATURE' : signCanvasRef.value.toDataURL('image/png')
+  if (signPopupAction.value) await signPopupAction.value(sig)
+  showSignPopup.value = false
+  fireConfetti()
 }
 
 function openPhotoViewer(src) {
@@ -410,33 +471,223 @@ const dashboard = computed(() => {
 const workflowMetrics = computed(() => [
   {
     key: 'create',
-    title: '接收建批',
-    value: draftPeopleCount.value,
-    hint: draftPeopleCount.value > 0 ? `${draftItemCount.value} 件草稿` : '登记衣物',
+    title: '接收',
+    value: draftItemCount.value,
+    hint: '接收衣物',
   },
   {
     key: 'pending',
-    title: '待送洗',
+    title: '送洗',
     value: dashboard.value.pending,
-    hint: '确认送洗',
+    hint: '酒店送洗',
   },
   {
     key: 'washed',
-    title: '待领取',
+    title: '取回',
     value: dashboard.value.washed,
-    hint: '确认领取',
+    hint: '酒店取回',
   },
   {
     key: 'received',
-    title: '待发放',
+    title: '发放',
     value: dashboard.value.received,
-    hint: '签字发放',
+    hint: '发放衣物',
   },
 ])
 
 const pendingGroups = computed(() => buildStageGroups('pending'))
 const washedGroups = computed(() => buildStageGroups('washed'))
 const receivedGroups = computed(() => buildStageGroups('received'))
+
+// 按流程节点筛选 + 按批次日期分组 + 按人展示
+function buildFlowNodeView(mainStatus) {
+  const nodeKey = activeFlowNode.value[mainStatus]
+  const staffMap = new Map(staffList.value.map(s => [s.id, s]))
+  const deptMap = new Map(departments.value.map(d => [d.id, d]))
+  const itemNameMap = new Map(itemTypes.value.map(t => [t.id, t.name]))
+
+  // 筛选该主状态+该节点的记录
+  const filtered = records.value.filter(r => r.status === mainStatus && r.subStatus === nodeKey)
+
+  // 按批次日期分组
+  const batchDateMap = new Map()
+  filtered.forEach(r => {
+    const batch = batches.value.find(b => b.id === r.batchId)
+    const dateKey = batch?.sendDate || '未知日期'
+    if (!batchDateMap.has(dateKey)) batchDateMap.set(dateKey, [])
+    batchDateMap.get(dateKey).push(r)
+  })
+
+  return Array.from(batchDateMap.entries())
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .map(([date, recs]) => {
+      // 组内按人分组
+      const personMap = new Map()
+      recs.forEach(r => {
+        const key = `${r.departmentId}-${r.staffId}`
+        if (!personMap.has(key)) {
+          const staff = staffMap.get(r.staffId)
+          const dept = deptMap.get(r.departmentId)
+          personMap.set(key, { key, staffName: staff?.name || '未知', deptName: dept?.name || '', items: [] })
+        }
+        const itemTypeCounts = {}
+        recs.filter(x => x.staffId === r.staffId).forEach(x => {
+          itemTypeCounts[x.itemTypeId] = (itemTypeCounts[x.itemTypeId] || 0) + 1
+        })
+        personMap.get(key).items.push({
+          ...r,
+          itemName: itemNameMap.get(r.itemTypeId) || '未知',
+          showPieceNo: itemTypeCounts[r.itemTypeId] > 1 && !!r.pieceNo,
+        })
+      })
+      return {
+        date,
+        totalCount: recs.reduce((s, r) => s + r.quantity, 0),
+        people: Array.from(personMap.values()).sort((a, b) => a.staffName.localeCompare(b.staffName, 'zh-Hans-CN')),
+      }
+    })
+}
+
+const pendingFlowView = computed(() => buildFlowNodeView('pending'))
+const washedFlowView = computed(() => buildFlowNodeView('washed'))
+const receivedFlowView = computed(() => buildFlowNodeView('received'))
+
+function getFlowView(stage) {
+  if (stage === 'pending') return pendingFlowView.value
+  if (stage === 'washed') return washedFlowView.value
+  return receivedFlowView.value
+}
+
+// 各节点的布草总数量
+function getFlowNodeCount(mainStatus, nodeKey) {
+  return records.value.filter(r => r.status === mainStatus && r.subStatus === nodeKey).reduce((s, r) => s + (r.quantity || 1), 0)
+}
+
+// 通用分拣视图（适用于酒店布草/待取回/待发放的分拣模式）
+const currentSortingGroups = computed(() => {
+  const stage = activeSection.value
+  const nodeKey = activeFlowNode.value[stage]
+  if (!showSortMode.value) return []
+
+  const staffMap = new Map(staffList.value.map(s => [s.id, s]))
+  const deptMap = new Map(departments.value.map(d => [d.id, d]))
+  const itemNameMap = new Map(itemTypes.value.map(t => [t.id, t.name]))
+  const typeMap = new Map()
+  records.value.forEach(r => {
+    if (r.status !== (stage === 'received' ? 'received' : 'washed')) return
+    if (r.subStatus !== nodeKey) return
+    const name = itemNameMap.get(r.itemTypeId) || '未知'
+    if (!typeMap.has(name)) typeMap.set(name, [])
+    const staff = staffMap.get(r.staffId)
+    const dept = deptMap.get(r.departmentId)
+    typeMap.get(name).push({ ...r, itemName: name, staffName: staff?.name || '未知', deptName: dept?.name || '' })
+  })
+  return Array.from(typeMap.entries())
+    .map(([typeName, items]) => ({
+      typeName, count: items.length,
+      items: items.sort((a, b) => (a.staffName || '').localeCompare(b.staffName || '', 'zh-Hans-CN')),
+      allSorted: items.length > 0 && items.every(i => sortedItemIds.value.has(i.id)),
+    }))
+    .sort((a, b) => b.count - a.count)
+})
+
+const currentSortingPersons = computed(() => {
+  const stage = activeSection.value
+  const nodeKey = activeFlowNode.value[stage]
+  if (!showSortMode.value) return []
+
+  const personMap = new Map()
+  records.value.forEach(r => {
+    if (r.status !== (stage === 'received' ? 'received' : 'washed')) return
+    if (r.subStatus !== nodeKey) return
+    const staff = staffList.value.find(s => s.id === r.staffId)
+    const name = itemTypes.value.find(t => t.id === r.itemTypeId)?.name || '未知'
+    if (!personMap.has(r.staffId)) {
+      const dept = departments.value.find(d => d.id === r.departmentId)
+      personMap.set(r.staffId, { staffId: r.staffId, staffName: staff?.name || '未知', deptName: dept?.name || '', items: [] })
+    }
+    personMap.get(r.staffId).items.push({ ...r, itemName: name })
+  })
+  return Array.from(personMap.values())
+    .map(p => ({
+      ...p, totalQty: p.items.length,
+      sortedQty: p.items.filter(i => sortedItemIds.value.has(i.id)).length,
+      allSorted: p.items.length > 0 && p.items.every(i => sortedItemIds.value.has(i.id)),
+    }))
+    .sort((a, b) => a.staffName.localeCompare(b.staffName, 'zh-Hans-CN'))
+})
+
+// 支持分拣模式的节点
+const sortableNodes = new Set(['washed_washing', 'washed_waiting', 'received_sort'])
+const signNodes = new Set(['pending_sign', 'washed_sign', 'received_sign'])
+
+// 取回阶段的分拣视图（washed_sort2 节点 - 待取回后的分拣）- 保留兼容
+const washedSort2Groups = computed(() => {
+  const staffMap = new Map(staffList.value.map(s => [s.id, s]))
+  const deptMap = new Map(departments.value.map(d => [d.id, d]))
+  const itemNameMap = new Map(itemTypes.value.map(t => [t.id, t.name]))
+  const typeMap = new Map()
+  records.value.forEach(r => {
+    if (r.status !== 'washed' || r.subStatus !== 'washed_sort2') return
+    const name = itemNameMap.get(r.itemTypeId) || '未知'
+    if (!typeMap.has(name)) typeMap.set(name, [])
+    const staff = staffMap.get(r.staffId)
+    const dept = deptMap.get(r.departmentId)
+    typeMap.get(name).push({ ...r, itemName: name, staffName: staff?.name || '未知', deptName: dept?.name || '' })
+  })
+  return Array.from(typeMap.entries())
+    .map(([typeName, items]) => ({
+      typeName, count: items.length,
+      items: items.sort((a, b) => (a.staffName || '').localeCompare(b.staffName || '', 'zh-Hans-CN')),
+      allSorted: items.length > 0 && items.every(i => sortedItemIds.value.has(i.id)),
+    }))
+    .sort((a, b) => b.count - a.count)
+})
+
+const washedSort2Persons = computed(() => {
+  const personMap = new Map()
+  records.value.forEach(r => {
+    if (r.status !== 'washed' || r.subStatus !== 'washed_sort2') return
+    const staff = staffList.value.find(s => s.id === r.staffId)
+    const dept = departments.value.find(d => d.id === r.departmentId)
+    const name = itemTypes.value.find(t => t.id === r.itemTypeId)?.name || '未知'
+    if (!personMap.has(r.staffId)) {
+      personMap.set(r.staffId, { staffId: r.staffId, staffName: staff?.name || '未知', deptName: dept?.name || '', items: [] })
+    }
+    personMap.get(r.staffId).items.push({ ...r, itemName: name })
+  })
+  return Array.from(personMap.values())
+    .map(p => ({
+      ...p,
+      totalQty: p.items.length,
+      sortedQty: p.items.filter(i => sortedItemIds.value.has(i.id)).length,
+      allSorted: p.items.length > 0 && p.items.every(i => sortedItemIds.value.has(i.id)),
+    }))
+    .sort((a, b) => a.staffName.localeCompare(b.staffName, 'zh-Hans-CN'))
+})
+
+// 取回阶段的分拣视图（washed_sort 节点专用）
+const washedSortingGroups = computed(() => {
+  const staffMap = new Map(staffList.value.map(s => [s.id, s]))
+  const deptMap = new Map(departments.value.map(d => [d.id, d]))
+  const itemNameMap = new Map(itemTypes.value.map(t => [t.id, t.name]))
+  const typeMap = new Map()
+  records.value.forEach(r => {
+    if (r.status !== 'washed' || r.subStatus !== 'washed_sort') return
+    const name = itemNameMap.get(r.itemTypeId) || '未知'
+    if (!typeMap.has(name)) typeMap.set(name, [])
+    const staff = staffMap.get(r.staffId)
+    const dept = deptMap.get(r.departmentId)
+    typeMap.get(name).push({ ...r, itemName: name, staffName: staff?.name || '未知', deptName: dept?.name || '' })
+  })
+  return Array.from(typeMap.entries())
+    .map(([typeName, items]) => ({
+      typeName, count: items.length,
+      items: items.sort((a, b) => (a.staffName || '').localeCompare(b.staffName || '', 'zh-Hans-CN')),
+      allSorted: items.length > 0 && items.every(i => sortedItemIds.value.has(i.id)),
+    }))
+    .sort((a, b) => b.count - a.count)
+})
 
 const sortingGroups = computed(() => {
   const typeMap = new Map()
@@ -468,6 +719,9 @@ function toggleSortingGroup(typeName) {
 }
 
 function toggleSorted(itemId) {
+  // 记录切换前哪些人已全部分拣
+  const prevDone = new Set(currentSortingPersons.value.filter(p => p.allSorted).map(p => p.staffId))
+
   const s = new Set(sortedItemIds.value)
   if (s.has(itemId)) {
     s.delete(itemId)
@@ -476,11 +730,13 @@ function toggleSorted(itemId) {
   }
   sortedItemIds.value = s
 
-  // Check if any person just became fully sorted
-  sortingPersons.value.forEach(p => {
-    if (p.allSorted && p.items.some(i => i.id === itemId)) {
-      showSuccessToast(`${p.staffName} 布草已全部分拣`)
-    }
+  // 检查是否有人刚刚完成全部分拣
+  nextTick(() => {
+    currentSortingPersons.value.forEach(p => {
+      if (p.allSorted && !prevDone.has(p.staffId)) {
+        showSuccessToast(`${p.staffName} 布草已全部分拣`)
+      }
+    })
   })
 }
 
@@ -542,7 +798,7 @@ function addPersonToSign(person) {
   showSuccessToast(`${person.staffName} 已全部加入签字确认`)
 }
 
-// --- 待领取分拣 ---
+// --- 待取回分拣 ---
 const washedSortGroups = computed(() => {
   const staffMap = new Map(staffList.value.map(s => [s.id, s.name]))
   const deptMap = new Map(departments.value.map(d => [d.id, d.name]))
@@ -606,13 +862,14 @@ async function confirmWashedSign(signatureData) {
   const now = new Date().toISOString()
   const n = new Date()
   const hhmmss = String(n.getHours()).padStart(2, '0') + String(n.getMinutes()).padStart(2, '0') + String(n.getSeconds()).padStart(2, '0')
-  const pickupId = `LQ${today.replace(/-/g, '')}-${hhmmss}`
+  const pickupId = `QH${today.replace(/-/g, '')}-${hhmmss}`
   const recordList = await db.records.where('id').anyOf(ids).toArray()
   const batchIds = Array.from(new Set(recordList.map(r => r.batchId)))
 
   await db.transaction('rw', db.records, db.batches, async () => {
     await db.records.where('id').anyOf(ids).modify(record => {
       record.status = 'received'
+      record.subStatus = 'received_sort'
       record.receivedAt = today
       record.pickupId = pickupId
       record.pickupSignature = signatureData
@@ -682,7 +939,6 @@ function startWashedSign(e) {
   washedSignCtx.beginPath()
   const x = e.clientX - rect.left, y = e.clientY - rect.top
   washedSignCtx.moveTo(x, y)
-  washedSignCanvasRef.value.setPointerCapture(e.pointerId)
 }
 
 function moveWashedSign(e) {
@@ -695,7 +951,7 @@ function moveWashedSign(e) {
   washedSignHasStroke.value = true
 }
 
-function endWashedSign() { if (washedSignCtx) { washedSignCtx.closePath() } }
+function endWashedSign() { if (washedSignCtx) { washedSignCtx.closePath() }; if (washedSignCanvasRef.value) washedSignCanvasRef.value.blur() }
 
 function confirmWashedSignAction() {
   if (!washedSignHasStroke.value && !washedSignNoSign.value) {
@@ -764,9 +1020,9 @@ function onPendingSignOpen() {
   })
 }
 
-function startPendingSign(e) { if (!pendingSignCtx) return; e.preventDefault(); const r = pendingSignCanvasRef.value.getBoundingClientRect(); const x = e.clientX - r.left, y = e.clientY - r.top; pendingSignCtx.beginPath(); pendingSignCtx.moveTo(x, y); pendingSignCanvasRef.value.setPointerCapture(e.pointerId) }
+function startPendingSign(e) { if (!pendingSignCtx) return; e.preventDefault(); const r = pendingSignCanvasRef.value.getBoundingClientRect(); const x = e.clientX - r.left, y = e.clientY - r.top; pendingSignCtx.beginPath(); pendingSignCtx.moveTo(x, y) }
 function movePendingSign(e) { if (!pendingSignCtx || e.buttons === 0) return; e.preventDefault(); const r = pendingSignCanvasRef.value.getBoundingClientRect(); const x = e.clientX - r.left, y = e.clientY - r.top; pendingSignCtx.lineTo(x, y); pendingSignCtx.stroke(); pendingSignHasStroke.value = true }
-function endPendingSign() { if (pendingSignCtx) { pendingSignCtx.closePath() } }
+function endPendingSign() { if (pendingSignCtx) { pendingSignCtx.closePath() }; if (pendingSignCanvasRef.value) pendingSignCanvasRef.value.blur() }
 
 async function confirmPendingSignAction() {
   if (!pendingSignHasStroke.value && !pendingSignNoSign.value) { showToast('请先签字或选择无签字'); return }
@@ -785,6 +1041,7 @@ async function confirmPendingSignAction() {
   await db.transaction('rw', db.records, db.batches, async () => {
     await db.records.where('id').anyOf(ids).modify(record => {
       record.status = 'washed'
+      record.subStatus = 'washed_washing'
       record.sentAt = today
       record.deliveryId = deliveryId
       record.deliverySignature = sig
@@ -1318,6 +1575,7 @@ function moveSignature(event) {
 
 function endSignature() {
   signatureDrawing = false
+  if (signatureCanvasRef.value) signatureCanvasRef.value.blur()
 }
 
 function clearSignature() {
@@ -1365,6 +1623,7 @@ async function applyDistributionSignature(signatureData) {
   await db.transaction('rw', db.records, db.batches, async () => {
     await db.records.where('id').anyOf(ids).modify(record => {
       record.status = 'distributed'
+      record.subStatus = 'received_sign'
       record.distributedAt = today
       record.distributionSignature = signatureData
       record.distributionSignedAt = now
@@ -1475,7 +1734,6 @@ function startIntakeSignature(event) {
   intakeCtx.beginPath()
   const x = event.clientX - rect.left, y = event.clientY - rect.top
   intakeCtx.moveTo(x, y)
-  canvas.setPointerCapture(event.pointerId)
 }
 
 function moveIntakeSignature(event) {
@@ -1491,6 +1749,7 @@ function moveIntakeSignature(event) {
 function endIntakeSignature() {
   if (!intakeCtx) return
   intakeCtx.closePath()
+  if (intakeCanvasRef.value) intakeCanvasRef.value.blur()
 }
 
 function clearIntakeCanvas() {
@@ -1530,7 +1789,6 @@ function startDistSignature(event) {
   distCtx.beginPath()
   const x = event.clientX - rect.left, y = event.clientY - rect.top
   distCtx.moveTo(x, y)
-  canvas.setPointerCapture(event.pointerId)
 }
 
 function moveDistSignature(event) {
@@ -1546,6 +1804,7 @@ function moveDistSignature(event) {
 function endDistSignature() {
   if (!distCtx) return
   distCtx.closePath()
+  if (distCanvasRef.value) distCanvasRef.value.blur()
 }
 
 function clearDistCanvas() {
@@ -1637,6 +1896,7 @@ function confirmIntakeSlip() {
   slipRecord.value = null
   clearEditor()
   fireConfetti()
+  activeIntakeNode.value = 'intake_draft'
 }
 
 function removeRecord(index) {
@@ -1689,6 +1949,7 @@ async function submitBatch() {
         distributionSignature: '',
         distributionSignedAt: '',
         status: 'pending',
+        subStatus: 'pending_pack',
         createdAt: now,
         sentAt: '',
         receivedAt: '',
@@ -1732,18 +1993,20 @@ async function advanceRecords(sourceStatus, ids) {
   const batchIds = Array.from(new Set(recordList.map(item => item.batchId)))
 
   const deliveryId = sourceStatus === 'pending' ? generateTimestampId('SX') : null
-  const pickupId = sourceStatus === 'washed' ? generateTimestampId('LQ') : null
+  const pickupId = sourceStatus === 'washed' ? generateTimestampId('QH') : null
 
   await db.transaction('rw', db.records, db.batches, async () => {
     await db.records.where('id').anyOf(ids).modify(record => {
       if (sourceStatus === 'pending') {
         record.status = 'washed'
+        record.subStatus = 'washed_washing'
         record.sentAt = today
         record.deliveryId = deliveryId
       }
 
       if (sourceStatus === 'washed') {
         record.status = 'received'
+        record.subStatus = 'received_sort'
         record.receivedAt = today
         record.pickupId = pickupId
         if (!record.sentAt) record.sentAt = today
@@ -1779,6 +2042,18 @@ function toggleSelection(listRef, id) {
     return
   }
   listRef.value = [...listRef.value, id]
+}
+
+function togglePersonSelection(stage, ids) {
+  const listRef = getSelectionListRef(stage)
+  const allSelected = ids.every(id => listRef.value.includes(id))
+  if (allSelected) {
+    listRef.value = listRef.value.filter(id => !ids.includes(id))
+  } else {
+    const set = new Set(listRef.value)
+    ids.forEach(id => set.add(id))
+    listRef.value = Array.from(set)
+  }
 }
 
 function getSelectionCount(status) {
@@ -1818,20 +2093,6 @@ function isGroupFullySelected(status, group) {
   return total > 0 && getGroupSelectedCount(status, group) === total
 }
 
-function togglePersonSelection(status, person) {
-  const listRef = getSelectionListRef(status)
-  const selectedSet = new Set(listRef.value)
-  const ids = person.items.map(item => item.id)
-  const shouldSelectAll = ids.some(id => !selectedSet.has(id))
-
-  if (shouldSelectAll) {
-    ids.forEach(id => selectedSet.add(id))
-  } else {
-    ids.forEach(id => selectedSet.delete(id))
-  }
-
-  listRef.value = Array.from(selectedSet)
-}
 
 function toggleGroupSelection(status, group) {
   const listRef = getSelectionListRef(status)
@@ -1887,26 +2148,26 @@ function openDraftDetail(record) {
 }
 
 function getStageTitle(status) {
-  if (status === 'pending') return '待送洗'
-  if (status === 'washed') return '待领取'
-  return '待发放'
+  if (status === 'pending') return '送洗'
+  if (status === 'washed') return '取回'
+  return '发放'
 }
 
 function getStageDescription(status) {
   if (status === 'pending') return '按批次、按人勾选送洗。'
-  if (status === 'washed') return '按照片和备注核对领取。'
+  if (status === 'washed') return '按照片和备注核对取回。'
   return '按人签字后逐件发放。'
 }
 
 function getActionText(status) {
   if (status === 'pending') return '确认送洗'
-  if (status === 'washed') return '确认领取'
+  if (status === 'washed') return '确认取回'
   return '签字发放'
 }
 
 function getLedgerTitle(status) {
   if (status === 'pending') return '送洗台账'
-  if (status === 'washed') return '领取台账'
+  if (status === 'washed') return '取回台账'
   return '发放台账'
 }
 
@@ -2030,6 +2291,171 @@ async function copyStageLedger(status) {
 
 function scrollToSection(key) {
   activeSection.value = key
+  nextTick(() => {
+    window.scrollTo({ top: 0, behavior: 'instant' })
+    document.documentElement.scrollTop = 0
+    document.body.scrollTop = 0
+  })
+}
+
+// 推进到下一流程节点
+async function advanceToNextNode(ids, mainStatus) {
+  if (!ids || ids.length === 0) { showToast('请先勾选布草'); return }
+  const currentNode = activeFlowNode.value[mainStatus]
+  const next = getNextFlowNode(mainStatus, currentNode)
+  if (!next) { showToast('已是最后一个节点'); return }
+
+  await db.records.where('id').anyOf(ids).modify(record => {
+    record.subStatus = next.key
+  })
+  const selRef = getSelectionListRef(mainStatus)
+  selRef.value = []
+  await persistSnapshot('', '状态已推进')
+  await refreshData()
+  showSuccessToast(`已推进到「${next.label}」`)
+}
+
+// 流程直送：跳到指定节点
+async function jumpToNode(ids, mainStatus, targetNodeKey) {
+  if (!ids || ids.length === 0) { showToast('请先勾选布草'); return }
+  const meta = getFlowNodeMeta(targetNodeKey)
+  if (!meta) return
+
+  await db.records.where('id').anyOf(ids).modify(record => {
+    record.subStatus = targetNodeKey
+  })
+  await persistSnapshot('', '状态已推进')
+  await refreshData()
+  showSuccessToast(`已直送到「${meta.label}」`)
+}
+
+// 签字确认节点：打开签字弹窗，签完自动推进
+function openFlowSignPopup(stage) {
+  const ids = getSelectedIdsForStage(stage)
+  if (ids.length === 0) { showToast('请先勾选布草'); return }
+
+  const staffMap = new Map(staffList.value.map(s => [s.id, s.name]))
+  const itemNameMap = new Map(itemTypes.value.map(t => [t.id, t.name]))
+  const items = records.value
+    .filter(r => ids.includes(r.id))
+    .map(r => ({
+      ...r,
+      itemName: itemNameMap.get(r.itemTypeId) || '未知',
+      staffName: staffMap.get(r.staffId) || '未知',
+      qtyText: r.quantity > 1 ? ` x${r.quantity}` : '',
+    }))
+
+  const nodeKey = activeFlowNode.value[stage]
+  const titles = {
+    pending_sign: '送洗签字确认',
+    washed_sign: '取回签字确认',
+    received_sign: '发放签字确认',
+  }
+
+  signPopupTitle.value = titles[nodeKey] || '签字确认'
+  signPopupItems.value = items
+  signPopupAction.value = async (sig) => {
+    // 保存签字数据
+    const now = new Date().toISOString()
+    const sigField = nodeKey === 'pending_sign' ? 'deliverySignature'
+      : nodeKey === 'washed_sign' ? 'pickupSignature'
+      : 'distributionSignature'
+    const sigTimeField = sigField.replace('Signature', 'SignedAt')
+
+    await db.records.where('id').anyOf(ids).modify(record => {
+      record[sigField] = sig
+      record[sigTimeField] = now
+    })
+
+    // 自动推进：签字节点是阶段最后一个节点时，推进主状态
+    const next = getNextFlowNode(stage, nodeKey)
+    if (next) {
+      // 还有下一个子节点，推进子状态
+      await db.records.where('id').anyOf(ids).modify(record => {
+        record.subStatus = next.key
+      })
+    } else {
+      // 是最后一个节点，推进主状态
+      if (nodeKey === 'pending_sign') {
+        // 送洗签字完成 → 推进到 washed
+        const today = getToday()
+        const deliveryId = generateTimestampId('SX')
+        await db.records.where('id').anyOf(ids).modify(record => {
+          record.status = 'washed'
+          record.subStatus = 'washed_washing'
+          record.sentAt = today
+          record.deliveryId = deliveryId
+        })
+      } else if (nodeKey === 'received_sign') {
+        // 发放签字完成 → 推进到 distributed
+        const today = getToday()
+        const distributionId = generateTimestampId('FF')
+        await db.records.where('id').anyOf(ids).modify(record => {
+          record.status = 'distributed'
+          record.subStatus = ''
+          record.distributedAt = today
+          record.distributionId = distributionId
+        })
+      }
+    }
+
+    const selRef = getSelectionListRef(stage)
+    selRef.value = selRef.value.filter(id => !ids.includes(id))
+    await persistSnapshot('', '签字已完成')
+    await refreshData()
+
+  }
+
+  signStrokeCount.value = 0
+  strokeHistory = []
+  signHasStroke.value = false
+  signNoSign.value = false
+  showSignPopup.value = true
+}
+
+// 发放签字确认：按人签字
+function openPersonSignPopup(person) {
+  const ids = person.items.map(i => i.id)
+  const itemNameMap = new Map(itemTypes.value.map(t => [t.id, t.name]))
+  const items = person.items.map(r => ({
+    ...r,
+    itemName: itemNameMap.get(r.itemTypeId) || '未知',
+    staffName: person.staffName,
+    qtyText: r.quantity > 1 ? ` x${r.quantity}` : '',
+  }))
+
+  signPopupTitle.value = `${person.staffName} · 发放签字`
+  signPopupItems.value = items
+  signPopupAction.value = async (sig) => {
+    const now = new Date().toISOString()
+    const today = getToday()
+    const distributionId = generateTimestampId('FF')
+
+    await db.records.where('id').anyOf(ids).modify(record => {
+      record.distributionSignature = sig
+      record.distributionSignedAt = now
+      record.status = 'distributed'
+      record.subStatus = ''
+      record.distributedAt = today
+      record.distributionId = distributionId
+    })
+
+    await persistSnapshot('', `${person.staffName} 发放签字完成`)
+    await refreshData()
+  }
+
+  signStrokeCount.value = 0
+  strokeHistory = []
+  signHasStroke.value = false
+  signNoSign.value = false
+  showSignPopup.value = true
+}
+
+function getSelectedIdsForStage(stage) {
+  const nodeKey = activeFlowNode.value[stage]
+  const stageStatus = stage === 'received' ? 'received' : (stage === 'washed' ? 'washed' : 'pending')
+  const validIds = new Set(records.value.filter(r => r.status === stageStatus && r.subStatus === nodeKey).map(r => r.id))
+  return getSelectionListRef(stage).value.filter(id => validIds.has(id))
 }
 </script>
 
@@ -2045,11 +2471,11 @@ function scrollToSection(key) {
             :class="{ 'is-active': activeSection === metric.key }"
           >
             <button type="button" class="process-step__jump" @click="scrollToSection(metric.key)">
-              <span class="process-step__index">{{ metric.value }}</span>
               <span class="process-step__text">
                 <strong>{{ metric.title }}</strong>
                 <span>{{ metric.hint }}</span>
               </span>
+              <span v-if="metric.value > 0" class="process-step__badge">{{ metric.value }}</span>
             </button>
 
           </article>
@@ -2058,44 +2484,65 @@ function scrollToSection(key) {
 
       <div class="workflow-main">
         <div class="section-stack">
-          <section v-show="activeSection === 'create'" id="section-create" class="planner-shell">
-            <div class="create-block__header">
-              <div>
-                <h3 class="create-block__title">接收建批
-                  <span v-if="draftPeopleCount" class="create-block__count">{{ draftPeopleCount }} 人 / {{ draftItemCount }} 件</span>
-                </h3>
-              </div>
-              <div class="create-block__toolbar">
-                <button type="button" class="create-block__chip" @click="showDatePicker = true">{{ receivedDate }}</button>
-                <button type="button" class="create-block__chip" @click="openNoteEditor">{{ batchNote || '备注' }}</button>
+          <section v-show="activeSection === 'create'" id="section-create" class="workflow-section">
+            <div class="section-heading">
+              <h3 class="section-heading__title">接收</h3>
+            </div>
+
+            <!-- 流程节点条 -->
+            <div class="flow-node-strip">
+              <template v-for="(node, idx) in intakeNodes" :key="node.key">
+                <div v-if="idx > 0" class="flow-node-line"></div>
+                <button
+                  type="button"
+                  class="flow-node"
+                  :class="{ 'is-active': activeIntakeNode === node.key, 'has-items': node.key === 'intake_draft' && recordsSummary.length > 0 }"
+                  @click="activeIntakeNode = node.key"
+                >
+                  <van-icon :name="node.icon" size="16" />
+                  <span class="flow-node__label">{{ node.label }}</span>
+                  <span v-if="node.key === 'intake_draft' && draftItemCount > 0" class="flow-node__count">{{ draftItemCount }}</span>
+                </button>
+              </template>
+            </div>
+
+            <!-- 新接收节点 -->
+            <div v-if="activeIntakeNode === 'intake_new'">
+              <div class="flow-action-bar" style="margin-top: 0;">
                 <van-button type="primary" round size="small" icon="plus" @click="openAddForm">选人录入</van-button>
               </div>
+              <div class="stage-empty-hint">点击"选人录入"开始接收衣物</div>
             </div>
 
-            <div v-if="recordsSummary.length > 0" class="create-block__list">
-              <article
-                v-for="(record, index) in recordsSummary"
-                :key="`${record.staffId}-${index}`"
-                class="person-row"
-                @click="openDraftDetail(record)"
-              >
-                <div class="person-row__body">
-                  <div class="person-row__name">{{ record.staffName }}</div>
-                  <div class="person-row__detail">{{ record.items.reduce((s, i) => s + i.quantity, 0) }} 件 · {{ record.intakeSignature === 'NO_SIGNATURE' ? '无签字' : (record.intakeSignature ? '已签字' : '无签字') }}</div>
+            <!-- 批次草稿节点 -->
+            <div v-else-if="activeIntakeNode === 'intake_draft'">
+              <div class="create-block__toolbar" style="padding: 10px 0 6px; display: flex; gap: 8px; align-items: center;">
+                <button type="button" class="create-block__chip" @click="showDatePicker = true">{{ receivedDate }}</button>
+                <button type="button" class="create-block__chip" @click="openNoteEditor">{{ batchNote || '备注' }}</button>
+              </div>
+              <div v-if="recordsSummary.length > 0" class="flow-content">
+                <div v-for="(record, index) in recordsSummary" :key="`${record.staffId}-${index}`" class="flow-person">
+                  <div class="flow-person__head" @click="openDraftDetail(record)">
+                    <strong>{{ record.staffName }}</strong>
+                    <span>{{ record.deptName }} · {{ record.items.reduce((s, i) => s + i.quantity, 0) }} 件</span>
+                    <button type="button" class="person-row__link person-row__link--danger" @click.stop="removeRecord(record.rawIndex)" style="margin-left: auto">移除</button>
+                  </div>
+                  <div class="flow-person__items">
+                    <div v-for="(item, ii) in record.items" :key="ii" class="flow-item">
+                      <img v-if="item.photo" :src="item.photo" class="flow-item__photo zoomable-photo" @click.stop="openPhotoViewer(item.photo)" />
+                      <div class="flow-item__body">
+                        <div class="flow-item__name">{{ itemTypes.find(t => t.id === item.itemTypeId)?.name || '' }}{{ item.quantity > 1 ? ` x${item.quantity}` : '' }}{{ item.pieceNo ? `（第${item.pieceNo}件）` : '' }}</div>
+                        <div v-if="item.note" class="flow-item__note">{{ item.note }}</div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <button type="button" class="person-row__link person-row__link--danger" @click.stop="removeRecord(record.rawIndex)">移除</button>
-              </article>
-            </div>
-            <div v-else class="create-block__empty">点击"选人录入"开始接收衣物</div>
 
-            <div v-if="recordsSummary.length > 0" class="create-block__footer">
-              <van-button
-                plain
-                round
-                size="small"
-                :loading="saving"
-                @click="submitBatch"
-              >提交待送洗</van-button>
+                <div class="flow-action-bar">
+                  <van-button plain round size="small" :loading="saving" @click="submitBatch">提交待送洗</van-button>
+                </div>
+              </div>
+              <div v-else class="stage-empty-hint">暂无草稿，请先在"新接收"中录入衣物</div>
             </div>
           </section>
 
@@ -2105,160 +2552,90 @@ function scrollToSection(key) {
             :key="stage"
             v-show="activeSection === stage"
             class="workflow-section"
-            :class="{ 'workflow-section--empty': getStageGroups(stage).length === 0 }"
           >
             <div class="section-heading">
-              <h3 class="section-heading__title">
-                {{ getStageTitle(stage) }}
-                <span class="section-heading__count">{{ getStageGroups(stage).reduce((s, g) => s + g.totalCount, 0) }} 件</span>
-              </h3>
-              <div v-if="stage === 'pending' && (getStageGroups(stage).length > 0 || pendingSignIds.size > 0)" class="section-heading__toggle">
-                <button type="button" class="toggle-chip" :class="{ 'is-active': pendingTab === 'batch' }" @click="pendingTab = 'batch'">批次情况</button>
-                <button type="button" class="toggle-chip" :class="{ 'is-active': pendingTab === 'sign' }" @click="pendingTab = 'sign'">签字确认<span v-if="pendingSignIds.size > 0"> ({{ pendingSignIds.size }})</span></button>
-              </div>
-              <div v-if="stage === 'washed' && (getStageGroups(stage).length > 0 || washedSignIds.size > 0)" class="section-heading__toggle">
-                <button type="button" class="toggle-chip" :class="{ 'is-active': washedTab === 'batch' }" @click="washedTab = 'batch'">批次情况</button>
-                <button type="button" class="toggle-chip" :class="{ 'is-active': washedTab === 'sort' }" @click="washedTab = 'sort'">分拣模式</button>
-                <button type="button" class="toggle-chip" :class="{ 'is-active': washedTab === 'sign' }" @click="washedTab = 'sign'">签字确认<span v-if="washedSignIds.size > 0"> ({{ washedSignIds.size }})</span></button>
-              </div>
-              <div v-if="stage === 'received' && getStageGroups(stage).length > 0" class="section-heading__toggle">
-                <button type="button" class="toggle-chip" :class="{ 'is-active': receivedTab === 'batch' }" @click="receivedTab = 'batch'">批次情况</button>
-                <button type="button" class="toggle-chip" :class="{ 'is-active': receivedTab === 'sort' }" @click="receivedTab = 'sort'">分拣模式</button>
-                <button type="button" class="toggle-chip" :class="{ 'is-active': receivedTab === 'sign' }" @click="receivedTab = 'sign'">签字确认</button>
-              </div>
+              <h3 class="section-heading__title">{{ getStageTitle(stage) }}</h3>
             </div>
 
-            <!-- 待送洗签字确认视图 -->
-            <div v-if="stage === 'pending' && pendingTab === 'sign'">
-              <div v-if="pendingSignItems.length > 0" class="sign-confirm-view">
-                <div class="sign-confirm-view__decor"></div>
-                <div class="sign-confirm-view__header">
-                  <div class="sign-confirm-view__count">{{ pendingSignItems.length }}</div>
-                  <div class="sign-confirm-view__label">种类型布草待送洗确认</div>
-                </div>
-                <div v-if="priceTables.length > 0" class="sign-confirm-view__price-select">
-                  <span class="sign-confirm-view__price-label">价格表</span>
-                  <select v-model="selectedPriceTableId" class="sign-confirm-view__select">
-                    <option v-for="pt in priceTables" :key="pt.id" :value="pt.id">{{ pt.name }}</option>
-                  </select>
-                </div>
-                <div class="sign-confirm-view__list">
-                  <div v-for="(item, i) in pendingSignItems" :key="i" class="sign-confirm-view__item">
-                    <span class="sign-confirm-view__item-name">{{ item.itemName }}{{ item.quantity > 1 ? ` x${item.quantity}` : '' }}</span>
-                    <span class="sign-confirm-view__item-person">{{ item.staffName }}</span>
-                  </div>
-                </div>
-                <div class="sign-confirm-view__actions">
-                  <button type="button" class="sign-confirm-view__clear" @click="resetPendingSign">清空列表</button>
-                  <van-button type="primary" round @click="openPendingSignPopup">签字确认送洗</van-button>
-                </div>
-              </div>
-              <div v-else class="sign-confirm-view sign-confirm-view--empty">
-                <div class="sign-confirm-view__decor"></div>
-                <div class="sign-confirm-view__empty-text">在批次情况中选择布草后<br>此处显示待确认列表</div>
-              </div>
+            <!-- 流程节点条 -->
+            <div class="flow-node-strip">
+              <template v-for="(node, idx) in getFlowNodes(stage)" :key="node.key">
+                <div v-if="idx > 0" class="flow-node-line"></div>
+                <button
+                  type="button"
+                  class="flow-node"
+                  :class="{ 'is-active': activeFlowNode[stage] === node.key, 'has-items': getFlowNodeCount(stage, node.key) > 0 }"
+                  @click="activeFlowNode[stage] = node.key; showSortMode = false; sortedItemIds = new Set()"
+                >
+                  <van-icon :name="node.icon" size="16" />
+                  <span class="flow-node__label">{{ node.label }}</span>
+                  <span v-if="getFlowNodeCount(stage, node.key) > 0" class="flow-node__count">{{ getFlowNodeCount(stage, node.key) }}</span>
+                </button>
+              </template>
             </div>
 
-            <!-- 待领取分拣视图 -->
-            <div v-if="stage === 'washed' && washedTab === 'sort' && washedSortGroups.length > 0" class="sorting-view">
-              <div class="sorting-list">
-                <div v-for="group in washedSortGroups" :key="group.typeName" class="sorting-group">
-                  <button type="button" class="sorting-group__head" @click="toggleWashedSortGroup(group.typeName)">
-                    <span class="sorting-group__name">{{ group.typeName }}</span>
-                    <span class="sorting-group__count">{{ group.count }} 件</span>
-                    <van-icon :name="washedSortExpanded[group.typeName] ? 'arrow-up' : 'arrow-down'" size="14" class="sorting-group__arrow" />
-                  </button>
-                  <div v-if="washedSortExpanded[group.typeName]" class="sorting-group__body">
-                    <div
-                      v-for="(item, idx) in group.items"
-                      :key="idx"
-                      class="sorting-item"
-                      :class="{ 'is-sorted': washedSignIds.has(item.id) }"
-                      @click="toggleWashedSign(item.id)"
-                    >
-                      <img v-if="item.photo" :src="item.photo" class="sorting-item__photo zoomable-photo" @click.stop="openPhotoViewer(item.photo)" />
-                      <div v-else class="sorting-item__no-photo"><van-icon name="photo-o" size="20" /></div>
-                      <div class="sorting-item__info">
-                        <div class="sorting-item__name">{{ getRecordDisplayTitle(item) }}</div>
-                      </div>
-                      <div class="sorting-item__person">
-                        <strong>{{ item.staffName }}</strong>
-                        <span>{{ item.deptName }}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
+            <!-- 分拣模式按钮（顶部） -->
+            <div v-if="sortableNodes.has(activeFlowNode[stage]) && !showSortMode && !signNodes.has(activeFlowNode[stage])" class="flow-sort-toggle">
+              <van-button plain round size="small" icon="cluster-o" @click="showSortMode = true; sortedItemIds = new Set()">分拣模式</van-button>
             </div>
 
-            <!-- 待领取签字确认视图 -->
-            <div v-if="stage === 'washed' && washedTab === 'sign'">
-              <div v-if="washedSignItems.length > 0" class="sign-confirm-view">
-                <div class="sign-confirm-view__decor"></div>
-                <div class="sign-confirm-view__header">
-                  <div class="sign-confirm-view__count">{{ washedSignItems.length }}</div>
-                  <div class="sign-confirm-view__label">种类型布草待领取确认</div>
-                </div>
-                <div class="sign-confirm-view__list">
-                  <div v-for="(item, i) in washedSignItems" :key="i" class="sign-confirm-view__item">
-                    <span class="sign-confirm-view__item-name">{{ item.itemName }}{{ item.quantity > 1 ? ` x${item.quantity}` : '' }}</span>
-                    <span class="sign-confirm-view__item-person">{{ item.staffName }}</span>
-                  </div>
-                </div>
-                <div class="sign-confirm-view__actions">
-                  <button type="button" class="sign-confirm-view__clear" @click="resetWashedSign">清空列表</button>
-                  <van-button type="primary" round @click="openWashedSignPopup">签字确认领取</van-button>
-                </div>
-              </div>
-              <div v-else class="sign-confirm-view sign-confirm-view--empty">
-                <div class="sign-confirm-view__decor"></div>
-                <div class="sign-confirm-view__empty-text">在分拣模式或批次情况中选择布草后<br>此处显示待确认列表</div>
-              </div>
-            </div>
-
-            <!-- 待发放分拣视图 -->
-            <div v-if="stage === 'received' && receivedTab === 'sort' && sortingGroups.length > 0" class="sorting-view">
-              <!-- 人名快捷栏 -->
+            <!-- 分拣模式（酒店布草/待取回/待发放内嵌） -->
+            <div v-if="showSortMode && sortableNodes.has(activeFlowNode[stage])" class="sorting-view" style="padding-top: 8px">
               <div class="sorting-persons">
                 <button
-                  v-for="p in sortingPersons"
+                  v-for="p in currentSortingPersons"
                   :key="p.staffId"
                   type="button"
                   class="sorting-person-chip"
                   :class="{ 'is-done': p.allSorted }"
-                  @click="openSortingPerson(p)"
                 >
                   {{ p.staffName }}
                   <span>{{ p.sortedQty }}/{{ p.totalQty }}</span>
                 </button>
                 <button v-if="sortedItemIds.size > 0" type="button" class="sorting-reset-btn" @click="resetSorting">重新分拣</button>
+                <button type="button" class="sorting-reset-btn sorting-reset-btn--exit" @click="showSortMode = false; sortedItemIds = new Set()">退出分拣</button>
               </div>
-
-              <!-- 按类型分组 -->
-              <div class="sorting-list">
-                <div v-for="group in sortingGroups" :key="group.typeName" class="sorting-group">
+              <div v-if="currentSortingGroups.length > 0" class="sorting-list">
+                <div v-for="group in currentSortingGroups" :key="group.typeName" class="sorting-group">
                   <button type="button" class="sorting-group__head" :class="{ 'is-done': group.allSorted }" @click="toggleSortingGroup(group.typeName)">
                     <span class="sorting-group__name">{{ group.typeName }}</span>
                     <span class="sorting-group__count">{{ group.count }} 件</span>
                     <van-icon :name="sortingExpanded[group.typeName] ? 'arrow-up' : 'arrow-down'" size="14" class="sorting-group__arrow" />
                   </button>
                   <div v-if="sortingExpanded[group.typeName]" class="sorting-group__body">
-                    <div
-                      v-for="(item, idx) in group.items"
-                      :key="idx"
-                      class="sorting-item"
-                      :class="{ 'is-sorted': sortedItemIds.has(item.id) }"
-                      @click="toggleSorted(item.id)"
-                    >
+                    <div v-for="(item, idx) in group.items" :key="idx" class="sorting-item" :class="{ 'is-sorted': sortedItemIds.has(item.id) }" @click="toggleSorted(item.id)">
                       <img v-if="item.photo" :src="item.photo" class="sorting-item__photo zoomable-photo" @click.stop="openPhotoViewer(item.photo)" />
                       <div v-else class="sorting-item__no-photo"><van-icon name="photo-o" size="20" /></div>
-                      <div class="sorting-item__info">
-                        <div class="sorting-item__name">{{ getRecordDisplayTitle(item) }}</div>
-                        <div v-if="item.note" class="sorting-item__note">{{ item.note }}</div>
-                      </div>
-                      <div class="sorting-item__person">
-                        <strong>{{ item.staffName }}</strong>
-                        <span>{{ item.deptName }}</span>
+                      <div class="sorting-item__info"><div class="sorting-item__name">{{ getRecordDisplayTitle(item) }}</div></div>
+                      <div class="sorting-item__person"><strong>{{ item.staffName }}</strong><span>{{ item.deptName }}</span></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div v-else class="stage-empty-hint">当前节点暂无布草</div>
+              <div v-if="currentSortingGroups.length > 0 && sortedItemIds.size > 0" class="flow-action-bar">
+                <van-button plain round size="small" @click="advanceToNextNode(Array.from(sortedItemIds), stage)">
+                  已分拣推进到下一步 ({{ sortedItemIds.size }})
+                </van-button>
+              </div>
+            </div>
+
+            <!-- 发放签字确认：按人独立签字，不需要选择框 -->
+            <div v-else-if="activeFlowNode[stage] === 'received_sign' && getFlowView(stage).length > 0" class="flow-content">
+              <div v-for="group in getFlowView(stage)" :key="group.date" class="flow-date-group">
+                <div class="flow-date-group__label">{{ group.date }} · {{ group.totalCount }} 件</div>
+                <div v-for="person in group.people" :key="person.key" class="flow-person">
+                  <div class="flow-person__head">
+                    <strong>{{ person.staffName }}</strong>
+                    <span>{{ person.deptName }} · {{ person.items.length }} 件</span>
+                    <button type="button" class="flow-person__sign-btn" @click.stop="openPersonSignPopup(person)">签字发放</button>
+                  </div>
+                  <div class="flow-person__items">
+                    <div v-for="item in person.items" :key="item.id" class="flow-item">
+                      <img v-if="item.photo" :src="item.photo" class="flow-item__photo zoomable-photo" @click.stop="openPhotoViewer(item.photo)" />
+                      <div class="flow-item__body">
+                        <div class="flow-item__name">{{ getRecordDisplayTitle(item) }}</div>
+                        <div v-if="item.note" class="flow-item__note">{{ item.note }}</div>
                       </div>
                     </div>
                   </div>
@@ -2266,167 +2643,46 @@ function scrollToSection(key) {
               </div>
             </div>
 
-            <!-- 签字确认视图 -->
-            <div v-if="stage === 'received' && receivedTab === 'sign'" class="signing-view">
-              <div v-if="pendingSignByDept.length > 0">
-                <div v-for="dept in pendingSignByDept" :key="dept.deptName" class="signing-dept-group">
-                  <div class="signing-dept-group__label">{{ dept.deptName }}</div>
-                  <div class="sorting-list">
-                    <article
-                      v-for="person in dept.persons"
-                      :key="person.staffId"
-                      class="signing-person-card"
-                    >
-                      <div class="signing-person-card__head">
-                        <div>
-                          <div class="signing-person-card__name">{{ person.staffName }}</div>
-                          <div class="signing-person-card__meta">{{ person.totalQty }} 件</div>
-                        </div>
-                        <van-button type="primary" size="small" round @click="openDistributionSlip(null, person)">签字发放</van-button>
+            <!-- 按批次日期 → 按人 → 衣物（含图片）展示 -->
+            <div v-else-if="getFlowView(stage).length > 0" class="flow-content">
+              <div v-for="group in getFlowView(stage)" :key="group.date" class="flow-date-group">
+                <div class="flow-date-group__label">{{ group.date }} · {{ group.totalCount }} 件</div>
+                <div v-for="person in group.people" :key="person.key" class="flow-person">
+                  <div class="flow-person__head" @click="togglePersonSelection(stage, person.items.map(i => i.id))">
+                    <div class="flow-item__check" :class="{ 'is-checked': person.items.every(i => getSelectionListRef(stage).value.includes(i.id)) }"></div>
+                    <strong>{{ person.staffName }}</strong>
+                    <span>{{ person.deptName }}</span>
+                    <button type="button" class="flow-person__detail-btn" @click.stop="goBatchDetail(person.items[0]?.batchId, person.items[0]?.staffId)">查看详情</button>
+                  </div>
+                  <div class="flow-person__items">
+                    <div v-for="item in person.items" :key="item.id" class="flow-item" :class="{ 'is-selected': getSelectionListRef(stage).value.includes(item.id) }" @click="toggleSelection(getSelectionListRef(stage), item.id)">
+                      <div class="flow-item__check" :class="{ 'is-checked': getSelectionListRef(stage).value.includes(item.id) }"></div>
+                      <img v-if="item.photo" :src="item.photo" class="flow-item__photo zoomable-photo" @click.stop="openPhotoViewer(item.photo)" />
+                      <div class="flow-item__body">
+                        <div class="flow-item__name">{{ getRecordDisplayTitle(item) }}</div>
+                        <div v-if="item.note" class="flow-item__note">{{ item.note }}</div>
                       </div>
-                      <div class="signing-person-card__items">
-                        <span v-for="(item, i) in person.items" :key="i">{{ getRecordDisplayTitle(item) }}</span>
-                      </div>
-                    </article>
+                    </div>
                   </div>
                 </div>
               </div>
-              <div v-else class="create-block__empty">在分拣模式中完成某人的全部分拣后，此处自动出现签字入口</div>
+
+              <!-- 操作栏：签字节点只显示全选+签字 -->
+              <div v-if="signNodes.has(activeFlowNode[stage])" class="flow-action-bar">
+                <van-button plain round size="small" @click="selectAllStage(stage)">全选</van-button>
+                <van-button type="primary" round size="small" @click="openFlowSignPopup(stage)">签字确认 ({{ getSelectionCount(stage) }})</van-button>
+              </div>
+              <!-- 操作栏：普通节点 -->
+              <div v-else class="flow-action-bar">
+                <van-button plain round size="small" @click="selectAllStage(stage)">全选</van-button>
+                <van-button v-if="getNextFlowNode(stage, activeFlowNode[stage])" type="primary" round size="small" @click="advanceToNextNode(getSelectionListRef(stage).value, stage)">
+                  推进到「{{ getNextFlowNode(stage, activeFlowNode[stage]).label }}」({{ getSelectionCount(stage) }})
+                </van-button>
+                <van-button v-if="activeFlowNode[stage] === 'washed_arrived'" type="primary" round size="small" @click="advanceRecords('washed', getSelectionListRef(stage).value)">确认取回 ({{ getSelectionCount(stage) }})</van-button>
+              </div>
             </div>
+            <div v-else class="stage-empty-hint">当前节点暂无布草</div>
 
-            <template v-if="(stage === 'pending' && pendingTab === 'batch') || (stage === 'washed' && washedTab === 'batch') || (stage === 'received' && receivedTab === 'batch')">
-            <div v-if="getStageGroups(stage).length > 0 && stage !== 'received'" class="stage-action-bar">
-              <van-button plain round size="small" type="primary" @click="selectAllStage(stage)">
-                {{ isAllStageSelected(stage) ? '取消全选' : '全选' }}
-              </van-button>
-              <van-button
-                round size="small"
-                :type="canAdvanceStage(stage) ? 'primary' : 'default'"
-                :plain="!canAdvanceStage(stage)"
-                :disabled="!canAdvanceStage(stage)"
-                @click="stage === 'pending' ? addPendingSelectedToSign() : (stage === 'washed' ? addWashedSelectedToSign() : advanceRecords(stage, getSelectionListRef(stage).value))"
-              >{{ (stage === 'pending' || stage === 'washed') ? '加入签字确认' : getActionText(stage) }}{{ getSelectionCount(stage) ? ` (${getSelectionCount(stage)})` : '' }}</van-button>
-            </div>
-
-            <div v-if="getStageGroups(stage).length === 0 && ((stage === 'pending' && pendingSignIds.size > 0) || (stage === 'washed' && washedSignIds.size > 0))" class="stage-empty-hint">
-              全部已加入签字确认，请切换到"签字确认"标签完成签字
-            </div>
-            <div v-else-if="getStageGroups(stage).length === 0" class="stage-empty-hint">暂无</div>
-
-            <div v-else class="lane-stack">
-              <article v-for="group in getStageGroups(stage)" :key="group.batchId" class="lane-card">
-                <div class="lane-card__head">
-                  <div>
-                    <button type="button" class="lane-card__title-button" @click="goBatchDetail(group.batchId)">{{ group.batchLabel }}</button>
-                    <div v-if="group.batchNote" class="lane-card__note">{{ group.batchNote }}</div>
-                  </div>
-                  <div class="lane-card__actions">
-                    <van-button
-                      v-if="stage !== 'received'"
-                      plain
-                      round
-                      size="small"
-                      type="primary"
-                      @click.stop="toggleGroupSelection(stage, group)"
-                    >
-                      {{ isGroupFullySelected(stage, group) ? '取消全选' : '全选此批' }}
-                    </van-button>
-                  </div>
-                </div>
-
-                <van-checkbox-group
-                  v-if="stage !== 'received'"
-                  :model-value="getSelectionListRef(stage).value"
-                  class="lane-list"
-                  @update:model-value="value => { getSelectionListRef(stage).value = value }"
-                >
-                  <article v-for="person in group.people" :key="person.key" class="person-panel">
-                    <div class="person-panel__head">
-                      <div>
-                        <button type="button" class="person-panel__title person-panel__title--link" @click.stop="goBatchDetail(group.batchId, person.items[0]?.staffId)">{{ person.staffName }}</button>
-                        <div class="person-panel__meta">{{ person.deptName }}</div>
-                      </div>
-                      <div class="person-panel__actions">
-                        <van-button
-                          plain
-                          size="small"
-                          round
-                          type="primary"
-                          @click.stop="togglePersonSelection(stage, person)"
-                        >
-                          {{ isPersonFullySelected(stage, person) ? '取消' : '全选' }}
-                        </van-button>
-                      </div>
-                    </div>
-
-                    <div class="person-panel__items">
-                      <div
-                        v-for="item in person.items"
-                        :key="item.id"
-                        class="record-card"
-                        @click="toggleSelection(getSelectionListRef(stage), item.id)"
-                      >
-                        <van-checkbox :name="item.id" @click.stop />
-                        <div class="record-card__body">
-                          <div class="record-card__title-row">
-                            <strong>{{ getRecordDisplayTitle(item) }}</strong>
-                            <div class="record-card__id-group">
-                              <span v-if="item.deliveryId && (stage === 'washed' || stage === 'received')" class="record-card__id-tag">{{ item.deliveryId }}</span>
-                              <span v-if="item.pickupId && stage === 'received'" class="record-card__id-tag">{{ item.pickupId }}</span>
-                            </div>
-                          </div>
-                          <div v-if="getStageDateLabel(stage, { ...item, batchDate: group.batchDate })" class="record-card__meta">
-                            {{ getStageDateLabel(stage, { ...item, batchDate: group.batchDate }) }}
-                          </div>
-                          <div v-if="item.note" class="record-card__note">备注：{{ item.note }}</div>
-                          <img v-if="item.photo" :src="item.photo" class="record-card__photo zoomable-photo" @click.stop="openPhotoViewer(item.photo)" />
-                        </div>
-                      </div>
-                    </div>
-                  </article>
-                </van-checkbox-group>
-
-                <div v-else class="lane-list">
-                  <article v-for="person in group.people" :key="person.key" class="person-panel">
-                    <div class="person-panel__head">
-                      <div>
-                        <button type="button" class="person-panel__title person-panel__title--link" @click.stop="goBatchDetail(group.batchId, person.items[0]?.staffId)">{{ person.staffName }}</button>
-                        <div class="person-panel__meta">{{ person.deptName }}</div>
-                      </div>
-                      <div class="person-panel__actions">
-                        <van-button
-                          type="primary"
-                          size="small"
-                          round
-                          @click.stop="openDistributionSlip(group, person)"
-                        >签字发放</van-button>
-                      </div>
-                    </div>
-
-                    <div class="person-panel__items">
-                      <div
-                        v-for="item in person.items"
-                        :key="item.id"
-                        class="record-card"
-                      >
-                        <div class="record-card__body">
-                          <div class="record-card__title-row">
-                            <strong>{{ getRecordDisplayTitle(item) }}</strong>
-                            <div class="record-card__id-group">
-                              <span v-if="item.deliveryId" class="record-card__id-tag">{{ item.deliveryId }}</span>
-                              <span v-if="item.pickupId" class="record-card__id-tag">{{ item.pickupId }}</span>
-                            </div>
-                          </div>
-                          <div v-if="item.note" class="record-card__note">备注：{{ item.note }}</div>
-                          <img v-if="item.photo" :src="item.photo" class="record-card__photo zoomable-photo" @click.stop="openPhotoViewer(item.photo)" />
-                        </div>
-                      </div>
-                    </div>
-                  </article>
-                </div>
-              </article>
-            </div>
-            </template>
           </section>
         </div>
       </div>
@@ -2705,8 +2961,8 @@ function scrollToSection(key) {
         </template>
 
         <div class="bottom-actions">
-          <van-button v-if="slipMode === 'intake'" block type="primary" @click="confirmIntakeSlip">确认无误</van-button>
-          <van-button v-if="slipMode !== 'intake'" block type="primary" @click="confirmDistribution">确认发放</van-button>
+          <button v-if="slipMode === 'intake'" class="sign-confirm-btn" @touchstart="$event.currentTarget.classList.add('is-pressed')" @touchend="$event.currentTarget.classList.remove('is-pressed')" @touchcancel="$event.currentTarget.classList.remove('is-pressed')" @click="confirmIntakeSlip" @touchend.prevent="confirmIntakeSlip">确认无误</button>
+          <button v-if="slipMode !== 'intake'" class="sign-confirm-btn" @touchstart="$event.currentTarget.classList.add('is-pressed')" @touchend="$event.currentTarget.classList.remove('is-pressed')" @touchcancel="$event.currentTarget.classList.remove('is-pressed')" @click="confirmDistribution" @touchend.prevent="confirmDistribution">确认发放</button>
         </div>
       </div>
     </van-popup>
@@ -2801,8 +3057,43 @@ function scrollToSection(key) {
 
           <div class="bottom-actions">
             <van-button block plain type="primary" @click="clearSignature">清空重签</van-button>
-            <van-button block type="primary" @click="confirmSignature">保存签字</van-button>
+            <button class="sign-confirm-btn" @touchstart="$event.currentTarget.classList.add('is-pressed')" @touchend="$event.currentTarget.classList.remove('is-pressed')" @touchcancel="$event.currentTarget.classList.remove('is-pressed')" @click="confirmSignature" @touchend.prevent="confirmSignature">保存签字</button>
           </div>
+        </div>
+      </div>
+    </van-popup>
+
+    <!-- 统一签字弹窗 -->
+    <van-popup v-model:show="showSignPopup" position="bottom" class="popup-fullpage" :style="{ height: '100%' }" @opened="onSignPopupOpen">
+      <div class="popup-sheet popup-sheet--tall sign-page" :style="signPageBgStyle">
+        <div class="sign-page__decor-tl"></div>
+        <div class="sign-page__decor-br"></div>
+        <div class="popup-page-header">
+          <button type="button" class="popup-page-header__back" @click="showSignPopup = false"><van-icon name="arrow-left" size="18" /><span>返回</span></button>
+          <div class="popup-page-header__title">{{ signPopupTitle }}</div>
+        </div>
+        <div class="sign-page__summary">
+          <div class="sign-page__count">{{ signPopupItems.length }}</div>
+          <div class="sign-page__count-label">件布草</div>
+        </div>
+        <div class="sign-page__items">
+          <span v-for="(item, i) in signPopupItems" :key="i" class="sign-page__tag">{{ item.itemName }}{{ item.qtyText }} · {{ item.staffName }}</span>
+        </div>
+        <section class="signature-panel">
+          <div class="signature-panel__toolbar">
+            <div class="signature-panel__title">签字区域</div>
+            <div class="signature-panel__actions">
+              <button type="button" class="signature-panel__link" @click="signNoSign = true">无签字</button>
+              <button type="button" class="signature-panel__link" @click="clearSignCanvas">清空重签</button>
+            </div>
+          </div>
+          <div class="signature-board">
+            <div v-if="signNoSign" class="signature-board__no-sign-overlay">无签字</div>
+            <canvas v-show="!signNoSign" ref="signCanvasRef" class="signature-board__canvas" @pointerdown="startSign" @pointermove="moveSign" @pointerup="endSign" @pointerleave="endSign" @pointercancel="endSign" />
+          </div>
+        </section>
+        <div class="bottom-actions">
+          <button class="sign-confirm-btn" @touchstart="$event.currentTarget.classList.add('is-pressed')" @touchend="$event.currentTarget.classList.remove('is-pressed')" @touchcancel="$event.currentTarget.classList.remove('is-pressed')" @click="confirmSignPopup" @touchend.prevent="confirmSignPopup">确认</button>
         </div>
       </div>
     </van-popup>
@@ -2897,7 +3188,7 @@ function scrollToSection(key) {
         </section>
 
         <div class="bottom-actions">
-          <van-button block type="primary" round size="large" @click="confirmPendingSignAction">确认送洗</van-button>
+          <button class="sign-confirm-btn" @touchstart="$event.currentTarget.classList.add('is-pressed')" @touchend="$event.currentTarget.classList.remove('is-pressed')" @touchcancel="$event.currentTarget.classList.remove('is-pressed')" @click="confirmPendingSignAction" @touchend.prevent="confirmPendingSignAction">确认送洗</button>
         </div>
       </div>
     </van-popup>
@@ -2910,7 +3201,7 @@ function scrollToSection(key) {
           <button type="button" class="popup-page-header__back" @click="showWashedSignPopup = false">
             <van-icon name="arrow-left" size="18" /><span>返回</span>
           </button>
-          <div class="popup-page-header__title">签字确认领取</div>
+          <div class="popup-page-header__title">签字确认取回</div>
         </div>
 
         <div class="sign-page__summary">
@@ -2946,7 +3237,7 @@ function scrollToSection(key) {
         </section>
 
         <div class="bottom-actions">
-          <van-button block type="primary" round size="large" @click="confirmWashedSignAction">确认领取</van-button>
+          <button class="sign-confirm-btn" @touchstart="$event.currentTarget.classList.add('is-pressed')" @touchend="$event.currentTarget.classList.remove('is-pressed')" @touchcancel="$event.currentTarget.classList.remove('is-pressed')" @click="confirmWashedSignAction" @touchend.prevent="confirmWashedSignAction">确认取回</button>
         </div>
       </div>
     </van-popup>

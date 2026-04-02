@@ -69,6 +69,20 @@ const batchCards = computed(() => {
     const summary = summarizeRecordStatus(batchRecords)
     const progress = computeBatchProgress(batchRecords)
 
+    // 按人分组
+    const personMap = new Map()
+    batchRecords.forEach(r => {
+      const key = r.staffId
+      if (!personMap.has(key)) {
+        const staff = staffList.value.find(s => s.id === r.staffId)
+        personMap.set(key, { staffName: staff?.name || '未知', items: [] })
+      }
+      personMap.get(key).items.push({
+        ...r,
+        itemName: itemTypeMap.value.get(r.itemTypeId) || '未知',
+      })
+    })
+
     return {
       ...batch,
       progress,
@@ -78,6 +92,7 @@ const batchCards = computed(() => {
       totalItems: batchRecords.reduce((sum, record) => sum + record.quantity, 0),
       peopleText: people.join('、') || '未关联人员',
       peopleCount: people.length,
+      personGroups: Array.from(personMap.values()),
     }
   })
 })
@@ -100,7 +115,7 @@ const filteredBatches = computed(() => {
 
 const batchesByDate = computed(() => {
   const map = new Map()
-  filteredBatches.value.forEach(batch => {
+  batchCards.value.forEach(batch => {
     const date = batch.sendDate || '未知日期'
     if (!map.has(date)) map.set(date, [])
     map.get(date).push(batch)
@@ -147,7 +162,7 @@ function openLedgerDetail(group, type) {
     }
   })
 
-  const typeLabels = { delivery: '送洗', pickup: '领取', distribution: '发放' }
+  const typeLabels = { delivery: '送洗', pickup: '取回', distribution: '发放' }
 
   ledgerDetailData.value = {
     id: group.id,
@@ -311,7 +326,7 @@ const deliveryGroups = computed(() => {
     })
 })
 
-// 领取台账：按 pickupId 分组
+// 取回台账：按 pickupId 分组
 const pickupGroups = computed(() => {
   const map = new Map()
   records.value.forEach(r => {
@@ -428,8 +443,8 @@ async function copyText(text) {
 }
 
 async function copyLedgerText(group, type) {
-  const prefixMap = { delivery: '送洗对账单', pickup: '领取对账单', distribution: '发放对账单' }
-  const dateLabelMap = { delivery: '送洗时间', pickup: '领取时间', distribution: '发放时间' }
+  const prefixMap = { delivery: '送洗对账单', pickup: '取回对账单', distribution: '发放对账单' }
+  const dateLabelMap = { delivery: '送洗时间', pickup: '取回时间', distribution: '发放时间' }
   const prefix = prefixMap[type] || type
   const dateLabel = dateLabelMap[type] || '时间'
   const lines = [prefix, `编号：${group.id}`, `${dateLabel}：${group.date}`, '']
@@ -453,57 +468,27 @@ async function copyLedgerText(group, type) {
     <div class="ledger-tabs">
       <button type="button" class="ledger-tab" :class="{ 'is-active': activeTab === 'batch' }" @click="activeTab = 'batch'">批次</button>
       <button type="button" class="ledger-tab" :class="{ 'is-active': activeTab === 'delivery' }" @click="activeTab = 'delivery'">送洗 <span v-if="deliveryGroups.length" class="ledger-tab__count">{{ deliveryGroups.length }}</span></button>
-      <button type="button" class="ledger-tab" :class="{ 'is-active': activeTab === 'pickup' }" @click="activeTab = 'pickup'">领取 <span v-if="pickupGroups.length" class="ledger-tab__count">{{ pickupGroups.length }}</span></button>
+      <button type="button" class="ledger-tab" :class="{ 'is-active': activeTab === 'pickup' }" @click="activeTab = 'pickup'">取回 <span v-if="pickupGroups.length" class="ledger-tab__count">{{ pickupGroups.length }}</span></button>
       <button type="button" class="ledger-tab" :class="{ 'is-active': activeTab === 'distribution' }" @click="activeTab = 'distribution'">发放 <span v-if="distributionGroups.length" class="ledger-tab__count">{{ distributionGroups.length }}</span></button>
     </div>
 
     <!-- 批次子标签 -->
     <div v-show="activeTab === 'batch'" class="section-stack">
-      <div class="filter-row">
-        <button type="button" class="filter-chip" :class="{ 'is-active': activeFilter === 'all' }" @click="activeFilter = 'all'">
-          全部 <span class="filter-chip__count">{{ overview.total }}</span>
-        </button>
-        <button type="button" class="filter-chip" :class="{ 'is-active': activeFilter === 'pending' }" @click="activeFilter = 'pending'">
-          待送洗 <span class="filter-chip__count">{{ overview.pending }}</span>
-        </button>
-        <button type="button" class="filter-chip" :class="{ 'is-active': activeFilter === 'processing' }" @click="activeFilter = 'processing'">
-          处理中 <span class="filter-chip__count">{{ overview.processing }}</span>
-        </button>
-        <button type="button" class="filter-chip" :class="{ 'is-active': activeFilter === 'completed' }" @click="activeFilter = 'completed'">
-          已完成 <span class="filter-chip__count">{{ overview.completed }}</span>
-        </button>
-      </div>
-
-      <van-empty v-if="filteredBatches.length === 0" description="当前筛选下没有批次" />
+      <van-empty v-if="batchCards.length === 0" description="暂无批次" />
 
       <div v-else class="batch-list">
         <div v-for="group in batchesByDate" :key="group.date" class="batch-date-group">
           <div class="batch-date-group__label">{{ group.date }}</div>
-          <article
-            v-for="batch in group.batches"
-            :key="batch.id"
-            class="batch-card"
-            @click="goDetail(batch)"
-          >
-            <div class="batch-card__head">
+          <article v-for="batch in group.batches" :key="batch.id" class="ledger-card" @click="goDetail(batch)">
+            <div class="ledger-card__head">
               <div>
-                <div class="batch-card__title">{{ batch.batchLabel }}</div>
-                <div class="batch-card__meta">{{ batch.peopleCount }} 人 · {{ batch.peopleText }}</div>
+                <div class="ledger-card__id-row">
+                  <div class="ledger-card__id">{{ batch.batchLabel }}</div>
+                  <span :class="batch.progress.key === 'completed' ? 'ledger-card__sign-ok' : 'ledger-card__sign-pending'">{{ batch.progress.label }}</span>
+                </div>
+                <div class="ledger-card__meta">{{ batch.totalItems }} 件 · {{ batch.peopleText }}</div>
               </div>
-              <van-tag :type="batch.progress.tag" round>{{ batch.progress.label }}</van-tag>
             </div>
-
-            <van-progress :percentage="batch.progress.percent" :show-pivot="false" stroke-width="6" />
-
-            <div class="batch-card__stats">
-              <span>{{ batch.totalItems }} 件</span>
-              <span v-if="batch.summary.pending">待送洗 {{ batch.summary.pending }}</span>
-              <span v-if="batch.summary.washed">待领取 {{ batch.summary.washed }}</span>
-              <span v-if="batch.summary.received">待发放 {{ batch.summary.received }}</span>
-              <span v-if="batch.summary.distributed">已发放 {{ batch.summary.distributed }}</span>
-            </div>
-
-            <div v-if="batch.note" class="batch-card__note">{{ batch.note }}</div>
           </article>
         </div>
       </div>
@@ -543,9 +528,9 @@ async function copyLedgerText(group, type) {
       </div>
     </div>
 
-    <!-- 领取子标签 -->
+    <!-- 取回子标签 -->
     <div v-show="activeTab === 'pickup'" class="section-stack">
-      <van-empty v-if="pickupGroups.length === 0" description="暂无领取记录" />
+      <van-empty v-if="pickupGroups.length === 0" description="暂无取回记录" />
       <div v-else class="batch-list">
         <div v-for="dg in pickupByDate" :key="dg.date" class="batch-date-group">
           <div class="batch-date-group__label">{{ dg.date }}</div>
@@ -646,7 +631,7 @@ async function copyLedgerText(group, type) {
               <div class="ledger-detail-item__ids">
                 <span v-if="item.batchLabel">批次 {{ item.batchLabel }}</span>
                 <span v-if="item.deliveryId && ledgerDetailData.type !== 'delivery'">送洗 {{ item.deliveryId }}</span>
-                <span v-if="item.pickupId && ledgerDetailData.type !== 'pickup'">领取 {{ item.pickupId }}</span>
+                <span v-if="item.pickupId && ledgerDetailData.type !== 'pickup'">取回 {{ item.pickupId }}</span>
                 <span v-if="item.distributionId && ledgerDetailData.type !== 'distribution'">发放 {{ item.distributionId }}</span>
               </div>
               <div v-if="item.note" class="ledger-detail-item__note">{{ item.note }}</div>
@@ -663,12 +648,12 @@ async function copyLedgerText(group, type) {
           <button type="button" class="popup-page-header__back" @click="showSignPopup = false">
             <van-icon name="arrow-left" size="18" /><span>返回</span>
           </button>
-          <div class="popup-page-header__title">{{ signTarget?.type === 'delivery' ? '送洗签字确认' : '领取签字确认' }}</div>
+          <div class="popup-page-header__title">{{ signTarget?.type === 'delivery' ? '送洗签字确认' : '取回签字确认' }}</div>
         </div>
 
         <div v-if="signTarget" class="sign-info">
           <div class="sign-info__id">{{ signTarget.id }}</div>
-          <div class="sign-info__hint">酒店方确认{{ signTarget.type === 'delivery' ? '收到布草' : '布草已领取' }}后签字</div>
+          <div class="sign-info__hint">酒店方确认{{ signTarget.type === 'delivery' ? '收到布草' : '布草已取回' }}后签字</div>
         </div>
 
         <section class="signature-panel">

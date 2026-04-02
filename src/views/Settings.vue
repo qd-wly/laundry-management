@@ -353,17 +353,6 @@ async function toggleDevMode() {
         </div>
       </div>
 
-      <div v-if="devMode" class="settings-group">
-        <div class="settings-group__title">开发模式</div>
-        <div class="settings-group__body">
-          <button class="settings-row is-active" @click="toggleDevMode">
-            <span class="settings-row__label">开发模式运行中</span>
-            <span class="settings-row__meta">点击退出并恢复数据</span>
-            <span class="settings-row__dot"></span>
-          </button>
-        </div>
-      </div>
-
       <div class="settings-group">
         <div class="settings-group__title">人员管理</div>
         <div class="settings-group__body">

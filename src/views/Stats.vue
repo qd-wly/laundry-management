@@ -120,7 +120,7 @@ async function doExport() {
           <strong>{{ filteredData.statusSummary.pending }}</strong>
         </div>
         <div class="intake-bar__cell">
-          <span>待领取</span>
+          <span>待取回</span>
           <strong>{{ filteredData.statusSummary.washed }}</strong>
         </div>
         <div class="intake-bar__cell">

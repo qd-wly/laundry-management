@@ -26,13 +26,12 @@ async function readJsonIfExists(filePath) {
 
 function resolveBaseDir(app) {
   if (app.isPackaged) {
-    const portableDir = process.env.PORTABLE_EXECUTABLE_DIR
-    if (portableDir) {
-      return path.join(portableDir, 'data')
-    }
-    return path.join(app.getPath('userData'), 'data')
+    // 打包后使用 EXE 上两层的 data 文件夹 (release/data)
+    const exeDir = path.dirname(app.getPath('exe'))
+    return path.join(exeDir, '..', 'data')
   }
 
+  // 开发模式：也用 server/data（和之前一致）
   return path.resolve(__dirname, '..', 'server', 'data')
 }
 

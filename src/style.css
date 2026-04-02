@@ -282,24 +282,23 @@ body::before {
 
 /* 系统设置 - 设置卡片 */
 .settings-group {
-  background: var(--surface);
-  border: 1px solid var(--surface-line);
-  border-radius: var(--card-radius);
+  background: rgba(255, 255, 255, 0.03);
+  border: none;
+  border-radius: 14px;
   overflow: hidden;
 }
 
 .settings-group__title {
-  padding: 14px 18px 10px;
-  font-size: 13px;
-  font-weight: 600;
+  padding: 14px 18px 8px;
+  font-size: 12px;
+  font-weight: 500;
   color: var(--text-muted);
   letter-spacing: 0.04em;
-  text-transform: uppercase;
-  border-bottom: 1px solid var(--surface-line);
+  border-bottom: none;
 }
 
 .settings-group__body {
-  padding: 4px 0;
+  padding: 2px 0;
 }
 
 .settings-row {
@@ -311,25 +310,25 @@ body::before {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 14px 18px;
+  padding: 13px 18px;
   background: transparent;
   color: var(--text-main);
   text-align: left;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-  transition: background 0.15s ease;
+  transition: background 0.2s ease;
 }
 
 .settings-row:last-child {
   border-bottom: none;
 }
 
-.settings-row:hover {
-  background: rgba(255, 255, 255, 0.04);
+.settings-row:active {
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .settings-row__label {
   flex: 1;
   font-size: 15px;
+  font-weight: 500;
 }
 
 .settings-row__meta {
@@ -339,33 +338,33 @@ body::before {
 }
 
 .settings-row__arrow {
-  color: var(--text-muted);
+  color: rgba(255, 255, 255, 0.15);
   flex-shrink: 0;
 }
 
 .settings-row__dot {
-  width: 14px;
-  height: 14px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  border: 1.5px solid var(--text-muted);
+  border: none;
+  background: rgba(255, 255, 255, 0.1);
   flex-shrink: 0;
 }
 
 .settings-row.is-active .settings-row__dot {
   background: var(--accent);
-  border-color: var(--accent);
 }
 
 .settings-row.is-active .settings-row__label {
-  color: #e8a14a;
+  color: var(--accent);
 }
 
 .settings-row.is-active .settings-row__meta {
-  color: rgba(232, 161, 74, 0.7);
+  color: rgba(104, 208, 200, 0.6);
 }
 
 .settings-row.is-active .settings-row__arrow {
-  color: #e8a14a;
+  color: var(--accent);
 }
 
 .dev-mode-spacer {
@@ -537,14 +536,35 @@ body::before {
   border: none;
   cursor: pointer;
   font: inherit;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 10px;
+  display: flex;
   align-items: center;
+  gap: 10px;
   padding: 0;
   background: transparent;
   color: var(--text-main);
   text-align: left;
+  width: 100%;
+}
+
+.process-step__badge {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 7px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.process-step.is-active .process-step__badge {
+  background: var(--accent);
+  color: #0f1318;
 }
 
 .process-step.is-active {
@@ -956,18 +976,20 @@ body::before {
 
 .create-block__chip {
   appearance: none;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.04);
+  border: none;
+  background: rgba(255, 255, 255, 0.06);
   color: var(--text-muted);
-  font-size: 12px;
-  padding: 5px 12px;
-  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 14px;
+  border-radius: 10px;
   cursor: pointer;
   transition: background 0.15s ease;
 }
 
-.create-block__chip:hover {
-  background: rgba(255, 255, 255, 0.08);
+.create-block__chip:active {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-main);
 }
 
 .create-block__list {
@@ -1167,26 +1189,24 @@ body::before {
 
 .staff-chip {
   appearance: none;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 14px;
+  border: none;
+  border-radius: 10px;
   padding: 10px 18px;
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.06);
   color: var(--text-main);
   font: inherit;
   font-size: 15px;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  transition: all 0.2s ease;
 }
 
-.staff-chip:hover {
-  background: rgba(104, 208, 200, 0.08);
-  border-color: rgba(104, 208, 200, 0.2);
+.staff-chip:active {
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .staff-chip--active {
-  background: rgba(104, 208, 200, 0.16);
-  border-color: rgba(104, 208, 200, 0.36);
+  background: rgba(104, 208, 200, 0.15);
   color: var(--accent);
   font-weight: 600;
 }
@@ -1216,7 +1236,7 @@ body::before {
   transition: background 0.15s ease, color 0.15s ease;
 }
 
-.popup-page-header__back:hover {
+.popup-page-header__back:active {
   background: rgba(255, 255, 255, 0.1);
   color: var(--text-main);
 }
@@ -1239,13 +1259,13 @@ body::before {
   transition: background 0.15s ease;
 }
 
-.popup-page-header__action:hover {
+.popup-page-header__action:active {
   background: rgba(255, 255, 255, 0.12);
 }
 
 .popup-page-header__title {
-  font-size: 20px;
-  font-weight: 700;
+  font-size: 18px;
+  font-weight: 600;
   color: var(--text-main);
   white-space: nowrap;
   overflow: hidden;
@@ -1761,13 +1781,231 @@ button.batch-detail-bar__cell:hover {
   opacity: 0.3;
 }
 
-.workflow-section--empty {
-  padding: 14px 20px;
-}
 
 .stage-empty-hint {
   color: var(--text-muted);
   font-size: 14px;
+  padding: 24px 0;
+  text-align: center;
+}
+
+.flow-node-strip {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 12px 0;
+  overflow-x: auto;
+  min-height: 62px;
+}
+
+.flow-node-strip .flow-node-line {
+  width: 20px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.12);
+  flex-shrink: 0;
+}
+
+.flow-node {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-muted);
+  min-height: 38px;
+  font-size: 12px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.flow-node:hover { background: rgba(255, 255, 255, 0.06); }
+
+.flow-node.is-active {
+  background: var(--accent-soft);
+  border-color: rgba(104, 208, 200, 0.3);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.flow-node__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.flow-node.is-active .flow-node__count { background: rgba(104, 208, 200, 0.2); }
+
+.flow-content { padding-top: 4px; }
+.flow-date-group { margin-bottom: 16px; }
+
+.flow-date-group__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 4px 0 10px;
+}
+
+.flow-person {
+  margin-bottom: 10px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+}
+
+.flow-person__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+.flow-person__head strong { font-size: 14px; color: var(--text-main); }
+.flow-person__head span { font-size: 12px; color: var(--text-muted); }
+
+.flow-person__detail-btn {
+  appearance: none;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: 12px;
+  padding: 4px 10px;
+  margin-left: auto;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.flow-person__sign-btn {
+  appearance: none;
+  border: none;
+  background: rgba(104, 208, 200, 0.12);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 16px;
+  border-radius: 10px;
+  margin-left: auto;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+.flow-person__sign-btn:active {
+  background: rgba(104, 208, 200, 0.24);
+}
+
+.flow-person__items { padding: 0 14px 10px; }
+
+.flow-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  cursor: pointer;
+}
+
+.flow-item + .flow-item { border-top: 1px solid rgba(255, 255, 255, 0.04); }
+
+.flow-item__check {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1.5px solid rgba(255, 255, 255, 0.2);
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+.flow-item__check.is-checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.flow-item__check.is-checked::after {
+  content: '';
+  position: absolute;
+  left: 4.5px;
+  top: 1px;
+  width: 5px;
+  height: 9px;
+  border: solid rgba(0, 0, 0, 0.5);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.flow-item__photo {
+  width: 44px;
+  height: 44px;
+  object-fit: cover;
+  border-radius: 8px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.flow-item__body { flex: 1; min-width: 0; }
+.flow-item__name { font-size: 14px; color: var(--text-main); }
+.flow-item__note { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+.flow-sort-toggle {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 0 4px;
+}
+
+.flow-action-bar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 0 6px;
+  margin-top: 10px;
+}
+
+/* 统一操作按钮样式 */
+.flow-action-bar .van-button,
+.flow-sort-toggle .van-button {
+  --van-button-border-width: 0 !important;
+  border: none !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  letter-spacing: 0.3px;
+  padding: 0 18px !important;
+  height: 34px !important;
+  line-height: 34px !important;
+  border-radius: 10px !important;
+  transition: all 0.2s ease !important;
+}
+
+/* 次要按钮：半透明玻璃质感 */
+.flow-action-bar .van-button--plain,
+.flow-sort-toggle .van-button--plain {
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: var(--text-muted) !important;
+}
+.flow-action-bar .van-button--plain:active,
+.flow-sort-toggle .van-button--plain:active {
+  background: rgba(255, 255, 255, 0.12) !important;
+  color: var(--text-main) !important;
+}
+
+/* 主要按钮：柔和强调色 */
+.flow-action-bar .van-button--primary {
+  background: rgba(104, 208, 200, 0.15) !important;
+  color: var(--accent) !important;
+}
+.flow-action-bar .van-button--primary:active {
+  background: rgba(104, 208, 200, 0.28) !important;
 }
 
 .section-heading__count {
@@ -1804,29 +2042,32 @@ button.batch-detail-bar__cell:hover {
 
 .sorting-view {
   display: grid;
-  gap: 14px;
+  gap: 12px;
 }
 
 .sorting-persons {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 12px;
 }
 
 .sorting-person-chip {
   appearance: none;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: var(--surface);
+  border: none;
+  background: rgba(255, 255, 255, 0.06);
   color: var(--text-main);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
-  padding: 8px 14px;
-  border-radius: 12px;
-  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: default;
   display: flex;
   align-items: center;
-  gap: 6px;
-  transition: all 0.15s ease;
+  gap: 5px;
+  transition: all 0.2s ease;
 }
 
 .sorting-person-chip span {
@@ -1837,27 +2078,37 @@ button.batch-detail-bar__cell:hover {
 
 .sorting-person-chip.is-done {
   opacity: 0.35;
-  border-color: rgba(104, 208, 200, 0.2);
+  background: rgba(104, 208, 200, 0.08);
 }
 
 .sorting-person-chip:active {
-  background: var(--surface-muted);
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .sorting-reset-btn {
   appearance: none;
-  border: 1px dashed rgba(227, 110, 96, 0.3);
-  background: transparent;
-  color: rgba(227, 110, 96, 0.7);
+  border: none;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-muted);
   font-size: 12px;
-  padding: 8px 14px;
-  border-radius: 12px;
+  font-weight: 500;
+  padding: 8px 16px;
+  border-radius: 10px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.2s ease;
 }
 
 .sorting-reset-btn:active {
-  background: rgba(227, 110, 96, 0.1);
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-main);
+}
+
+.sorting-reset-btn--exit {
+  color: var(--accent);
+}
+.sorting-reset-btn--exit:active {
+  background: rgba(104, 208, 200, 0.12);
+  color: var(--accent);
 }
 
 .dist-person-row {
@@ -1917,54 +2168,30 @@ button.batch-detail-bar__cell:hover {
   overflow: hidden;
 }
 
-.sign-page__decor-tl {
-  position: absolute;
-  top: -60px;
-  left: -60px;
-  width: 200px;
-  height: 200px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(104, 208, 200, 0.1) 0%, transparent 70%);
-  pointer-events: none;
-  animation: sign-float 6s ease-in-out infinite;
-}
-
+.sign-page__decor-tl,
 .sign-page__decor-br {
-  position: absolute;
-  bottom: -80px;
-  right: -40px;
-  width: 240px;
-  height: 240px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(77, 132, 255, 0.08) 0%, transparent 70%);
-  pointer-events: none;
-  animation: sign-float 8s ease-in-out infinite reverse;
-}
-
-@keyframes sign-float {
-  0%, 100% { transform: translate(0, 0) scale(1); }
-  50% { transform: translate(10px, -10px) scale(1.05); }
+  display: none;
 }
 
 .sign-page__summary {
   display: flex;
   align-items: baseline;
-  gap: 4px;
-  margin-bottom: 14px;
+  gap: 6px;
+  margin-bottom: 16px;
   position: relative;
 }
 
 .sign-page__count {
-  font-size: 42px;
-  font-weight: 800;
-  color: var(--accent);
+  font-size: 36px;
+  font-weight: 700;
+  color: var(--text-main);
   line-height: 1;
 }
 
 .sign-page__count-label {
-  font-size: 16px;
+  font-size: 14px;
   color: var(--text-muted);
-  font-weight: 500;
+  font-weight: 400;
 }
 
 .sign-page__items {
@@ -1979,8 +2206,8 @@ button.batch-detail-bar__cell:hover {
   display: inline-block;
   padding: 5px 12px;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.05);
+  border: none;
   font-size: 13px;
   color: var(--text-muted);
 }
@@ -1988,10 +2215,10 @@ button.batch-detail-bar__cell:hover {
 /* 签字确认列表视图 */
 .sign-confirm-view {
   position: relative;
-  padding: 28px 20px 24px;
-  border-radius: 24px;
-  background: linear-gradient(145deg, rgba(104, 208, 200, 0.06) 0%, rgba(77, 132, 255, 0.04) 100%);
-  border: 1px solid rgba(104, 208, 200, 0.12);
+  padding: 24px 20px 20px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: none;
   overflow: hidden;
 }
 
@@ -2000,25 +2227,11 @@ button.batch-detail-bar__cell:hover {
 }
 
 .sign-confirm-view__decor {
-  position: absolute;
-  top: -40px;
-  right: -40px;
-  width: 160px;
-  height: 160px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(104, 208, 200, 0.08) 0%, transparent 70%);
-  pointer-events: none;
+  display: none;
 }
 
 .sign-confirm-view__decor::after {
-  content: '';
-  position: absolute;
-  bottom: -80px;
-  left: -60px;
-  width: 120px;
-  height: 120px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(77, 132, 255, 0.06) 0%, transparent 70%);
+  display: none;
 }
 
 .sign-confirm-view__header {
@@ -2109,15 +2322,19 @@ button.batch-detail-bar__cell:hover {
 .sign-confirm-view__clear {
   appearance: none;
   border: none;
-  background: none;
+  background: rgba(255, 255, 255, 0.06);
   color: var(--text-muted);
   font-size: 13px;
-  padding: 8px 12px;
+  font-weight: 500;
+  padding: 8px 16px;
+  border-radius: 10px;
   cursor: pointer;
+  transition: all 0.2s ease;
 }
 
-.sign-confirm-view__clear:hover {
-  color: #e36e60;
+.sign-confirm-view__clear:active {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-main);
 }
 
 .sign-confirm-view__empty-text {
@@ -2475,14 +2692,14 @@ button.batch-detail-bar__cell:hover {
 
 .draft-detail-card {
   padding: 18px;
-  border-radius: 20px;
+  border-radius: 14px;
   background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: none;
 }
 
 .draft-detail-card__name {
-  font-size: 20px;
-  font-weight: 700;
+  font-size: 18px;
+  font-weight: 600;
 }
 
 .draft-detail-card__meta {
@@ -2506,9 +2723,9 @@ button.batch-detail-bar__cell:hover {
 .draft-detail-card__photo {
   width: 88px;
   height: 88px;
-  border-radius: 14px;
+  border-radius: 10px;
   object-fit: cover;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: none;
 }
 
 .draft-detail-card__signature {
@@ -2525,9 +2742,9 @@ button.batch-detail-bar__cell:hover {
   display: grid;
   gap: 16px;
   padding: 18px;
-  border-radius: 22px;
+  border-radius: 14px;
   background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: none;
 }
 
 .slip-card__head {
@@ -2538,8 +2755,8 @@ button.batch-detail-bar__cell:hover {
 }
 
 .slip-card__name {
-  font-size: 20px;
-  font-weight: 700;
+  font-size: 18px;
+  font-weight: 600;
 }
 
 .slip-card__meta {
@@ -2566,9 +2783,9 @@ button.batch-detail-bar__cell:hover {
   flex-wrap: wrap;
   gap: 8px 12px;
   padding: 12px 14px;
-  border-radius: 16px;
+  border-radius: 10px;
   background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: none;
 }
 
 .slip-card__item span {
@@ -2873,6 +3090,81 @@ button.batch-detail-bar__cell:hover {
   font-size: 14px;
 }
 
+.batch-row {
+  padding: 12px 16px;
+  border-radius: 14px;
+  background: var(--surface);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.batch-row:active { background: var(--surface-muted); }
+
+.batch-date-group .batch-row + .batch-row { margin-top: 8px; }
+
+.batch-row__tags {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.batch-row__id {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-main);
+  font-family: 'Consolas', 'Monaco', 'SF Mono', monospace;
+  font-style: italic;
+}
+
+.batch-row__people {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.batch-card__people {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.batch-card__person + .batch-card__person {
+  margin-top: 10px;
+}
+
+.batch-card__person-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
+  margin-bottom: 6px;
+}
+
+.batch-card__person-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.batch-card__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.batch-card__item-photo {
+  width: 22px;
+  height: 22px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
 .record-card__id-group {
   display: flex;
   align-items: center;
@@ -3143,20 +3435,20 @@ button.batch-detail-bar__cell:hover {
 
 .backup-item {
   padding: 14px 16px;
-  border-radius: 14px;
-  background: var(--surface);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
+  border: none;
   cursor: pointer;
-  transition: background 0.15s ease;
+  transition: background 0.2s ease;
 }
 
 .backup-item:active {
-  background: var(--surface-muted);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .backup-item__time {
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--text-main);
 }
 
@@ -3267,6 +3559,48 @@ button.batch-detail-bar__cell:hover {
   padding-bottom: 12px;
 }
 
+/* 签字页底部确认按钮 */
+.sign-page .bottom-actions .van-button,
+.sign-page .bottom-actions .van-button--primary {
+  --van-button-border-width: 0 !important;
+  border: none !important;
+  border-radius: 12px !important;
+  font-size: 15px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.5px;
+  background: rgba(104, 208, 200, 0.15) !important;
+  color: var(--accent) !important;
+}
+.sign-page .bottom-actions .van-button:active,
+.sign-page .bottom-actions .van-button--primary:active {
+  background: rgba(104, 208, 200, 0.28) !important;
+}
+
+/* 所有弹窗底部按钮统一风格 */
+.bottom-actions .van-button {
+  --van-button-border-width: 0 !important;
+  border: none !important;
+  border-radius: 12px !important;
+  font-size: 15px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.3px;
+}
+.bottom-actions .van-button--primary {
+  background: rgba(104, 208, 200, 0.15) !important;
+  color: var(--accent) !important;
+}
+.bottom-actions .van-button--primary:active {
+  background: rgba(104, 208, 200, 0.28) !important;
+}
+.bottom-actions .van-button--plain {
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: var(--text-muted) !important;
+}
+.bottom-actions .van-button--plain:active {
+  background: rgba(255, 255, 255, 0.12) !important;
+  color: var(--text-main) !important;
+}
+
 .bottom-actions--inline {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -3298,12 +3632,13 @@ button.batch-detail-bar__cell:hover {
 .touch-select {
   min-width: 156px;
   min-height: 40px;
-  padding: 6px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
-  background: var(--surface-strong);
+  padding: 8px 12px;
+  border: none;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.07);
   color: var(--text-main);
   font-size: 15px;
+  outline: none;
 }
 
 .item-cell__title {
@@ -3388,15 +3723,15 @@ button.batch-detail-bar__cell:hover {
   transition: background 0.15s ease, color 0.15s ease;
 }
 
-.item-row__action:hover {
-  background: rgba(255, 255, 255, 0.06);
+.item-row__action:active {
+  background: rgba(255, 255, 255, 0.1);
   color: var(--text-main);
 }
 
 /* 系统设置人员管理 — 无边框表单 + 列表 */
 .form-card {
-  background: var(--surface);
-  border-radius: var(--card-radius);
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 14px;
   padding: 16px;
   display: flex;
   flex-direction: column;
@@ -3406,6 +3741,31 @@ button.batch-detail-bar__cell:hover {
 .form-card__title {
   font-size: 13px;
   color: var(--text-muted);
+}
+
+/* 设置页表单内按钮统一风格 */
+.form-card .van-button,
+.staff-item-row .van-button {
+  --van-button-border-width: 0 !important;
+  border: none !important;
+  border-radius: 10px !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+}
+.form-card .van-button--primary {
+  background: rgba(104, 208, 200, 0.15) !important;
+  color: var(--accent) !important;
+}
+.form-card .van-button--primary:active {
+  background: rgba(104, 208, 200, 0.28) !important;
+}
+.staff-item-row .van-button--danger {
+  background: rgba(227, 110, 96, 0.1) !important;
+  color: rgba(227, 110, 96, 0.7) !important;
+}
+.staff-item-row .van-button--danger:active {
+  background: rgba(227, 110, 96, 0.2) !important;
+  color: rgba(227, 110, 96, 1) !important;
 }
 
 .dark-input {
@@ -3440,8 +3800,8 @@ button.batch-detail-bar__cell:hover {
 }
 
 .staff-dept-group__list {
-  background: var(--surface);
-  border-radius: var(--card-radius);
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 12px;
   overflow: hidden;
 }
 
@@ -3485,9 +3845,9 @@ button.batch-detail-bar__cell:hover {
 
 .piece-card {
   padding: 14px;
-  border-radius: 18px;
+  border-radius: 12px;
   background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: none;
 }
 
 .piece-card__head {
@@ -3506,9 +3866,9 @@ button.batch-detail-bar__cell:hover {
 .signature-panel {
   margin-bottom: 12px;
   padding: 16px;
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: none;
 }
 
 .signature-panel__head {
@@ -3537,14 +3897,17 @@ button.batch-detail-bar__cell:hover {
   background: rgba(255, 255, 255, 0.06);
   color: var(--text-muted);
   font-size: 13px;
-  padding: 6px 14px;
+  font-weight: 500;
+  padding: 6px 16px;
+  border-radius: 10px;
   border-radius: 10px;
   cursor: pointer;
   transition: background 0.15s ease;
 }
 
-.signature-panel__link:hover {
-  background: rgba(255, 255, 255, 0.1);
+.signature-panel__link:active {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-main);
 }
 
 .signature-board__no-sign-overlay {
@@ -3562,8 +3925,9 @@ button.batch-detail-bar__cell:hover {
 
 .signature-panel__title,
 .signature-dialog__title {
-  font-size: 18px;
-  font-weight: 700;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--text-muted);
 }
 
 .signature-panel__meta,
@@ -3672,8 +4036,8 @@ button.batch-detail-bar__cell:hover {
 
 .signature-board {
   overflow: hidden;
-  border-radius: 22px;
-  border: 1px dashed rgba(104, 208, 200, 0.28);
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
   background: #121a23;
 }
 
@@ -3682,6 +4046,32 @@ button.batch-detail-bar__cell:hover {
   width: 100%;
   height: 260px;
   touch-action: none;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 签字页确认按钮：原生按钮 + pointerup 确保触屏一次点击立即响应 */
+.sign-confirm-btn {
+  appearance: none;
+  display: block;
+  width: 100%;
+  border: none;
+  border-radius: 12px;
+  padding: 14px 0;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  background: rgba(104, 208, 200, 0.15);
+  color: var(--accent);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s ease;
+  user-select: none;
+}
+.sign-confirm-btn:active,
+.sign-confirm-btn.is-pressed {
+  background: rgba(104, 208, 200, 0.28);
 }
 
 .item-extra-row {

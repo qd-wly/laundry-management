@@ -29,7 +29,7 @@ export async function exportToExcel(year, month) {
         接收日期: batch.sendDate || '',
         当前状态: getStatusMeta(record.status).label,
         送洗日期: record.sentAt || '',
-        领取日期: record.receivedAt || '',
+        取回日期: record.receivedAt || '',
         发放日期: record.distributedAt || '',
         部门: deptMap[record.departmentId] || '',
         姓名: staffMap[record.staffId] || '',

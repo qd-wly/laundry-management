@@ -39,6 +39,7 @@ async function bootstrap() {
       console.warn('[Laundry] desktop storage bootstrap skipped:', result.error)
     }
     await runPostHydrateMigrations()
+    await saveToDesktopStorage()
     await autoRestoreIfNeeded()
   } catch (e) {
     console.error('[Laundry] bootstrap error:', e?.message || e, e?.stack || '', JSON.stringify(e))
